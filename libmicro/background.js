@@ -205,10 +205,10 @@ Micro.init = async () => {
     }
 };
 /**
- * Reset libmicro.
+ * Teardown libmicro.
  * @function
  */
-Micro.reset = () => {
+Micro.teardown = () => {
     const chrome = Micro.chrome;
 
     if (!Micro.initialized) {
