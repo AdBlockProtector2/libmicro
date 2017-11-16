@@ -1,0 +1,28 @@
+{
+  "author": "jspenguin2017",
+  "background": {
+    "scripts": [
+      "libmicro/background.js",
+      "example.js"
+    ]
+  },
+  "browser_action": {
+    "default_title": "libmicro Example Extension"
+  },
+  "description": "An example extension to illustrate functionalities of libmicro",
+  "homepage_url": "https://github.com/AdBlockProtector2/libmicro/",
+  "incognito": "spanning",
+  "manifest_version": 2,
+  "minimum_chrome_version": "62.0",
+  "name": "libmicro Example Extension",
+  "permissions": [
+    "<all_urls>",
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "webNavigation",
+    "webRequest",
+    "webRequestBlocking"
+  ],
+  "version": "1.0"
+}

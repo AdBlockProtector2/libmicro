@@ -1,3 +1,55 @@
+/**
+
+libmicro, an embeddable firewall for modern browser extensions
+Copyright (C) 2017 jspenguin2017
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+**/
+
+
+/**
+
+libmicro is compatible with
+
+Chromium 62+
+Chrome   62+
+Opera    48+
+Quantum  57+
+
+
+libmicro needs these permissions
+
+<all_urls>
+storage
+unlimitedStorage
+tabs
+webNavigation
+webRequest
+webRequestBlocking
+
+
+libmicro does not create other global variable other than its
+namespace, Micro.
+libmicro will prepend "libmicro_" to all extension storage entries.
+
+This script is the background script of libmicro, it is expected
+to run before other scripts of your extension.
+
+**/
+
+
 "use strict";
 
 
@@ -6,81 +58,242 @@
  * @const {Namespace}
  */
 var Micro = {};
+/**
+ * Whether libmicro is initialized.
+ * @var {boolean}
+ */
+Micro.initialized = false;
 
 
 /**
  * The chrome namespace.
  * @const {Namespace}
  */
-Micro.chrome = window.chrome || window.browser;
+Micro.chrome = window.chrome;
 /**
  * Configuration and assets.
  * @var {Array.<Micro.Filter>}
- * @var {Array.<Micro.Scriptlet>}
+ * @var {Array.<Micro.Asset>}
  */
 Micro.config = [];
 Micro.assets = [];
+/**
+ * Tab store.
+ * @var {Object.<Object.<string>>}
+ */
+Micro.tabs = {};
 
 
 /**
- * Initialize libmicro.
+ * Initialize or reinitialize libmicro.
  * @async @function
  */
 Micro.init = async () => {
     const chrome = Micro.chrome;
 
-    const [config, assets] = await Micro.fetch();
+    if (Micro.initialized) {
+        Micro.reset();
+    }
+    Micro.initialized = true;
+
+    parseConfig: {
+        let [config, assets] = await new Promise((resolve, reject) => {
+            chrome.storage.local.get(["libmicro_config", "libmicro_assets"], (items) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve([
+                        items.libmicro_config || "",
+                        items.libmicro_assets || "",
+                    ]);
+                }
+            });
+        });
+
+        Micro.config = [];
+        Micro.assets = [];
+
+        config.split("\n").map((x) => x.trim()).filter((x) => x.length > 0).forEach((line) => {
+            if (line.startsWith("!") || (line.startsWith("#") && !line.startsWith("##"))) {
+                return;
+            }
+
+            try {
+                Micro.config.push(new Micro.Filter(line));
+            } catch (err) {
+                // Do not abort, as I do not want one bad filter to crash everything
+                console.error("libmicro could not parse the configuration '" + line + "' because");
+                console.error(err);
+            }
+        });
+
+        let buffer = [];
+        assets = assets.split("\n").map((x) => x.trim());
+        assets.push("");
+        assets.forEach((line) => {
+            if (line.startsWith("#")) {
+                return;
+            }
+
+            if (line.length === 0) {
+                if (buffer.length > 0) {
+                    const [name, type] = buffer.shift().split(" ");
+                    Micro.assets.push(new Micro.Asset(name, type, buffer.join(""), type.includes(";base64")));
+                    buffer = [];
+                }
+                return;
+            }
+
+            buffer.push(line);
+        });
+    }
+
+    setupListeners: {
+        Micro.tabs = {};
+
+        await new Promise((resolve, reject) => {
+            let runningQueries = 0;
+
+            chrome.tabs.query({}, (existingTabs) => {
+                for (let i = 0; i < existingTabs.length; i++) {
+                    const id = existingTabs[i].id;
+                    if (id !== chrome.tabs.TAB_ID_NONE) {
+                        if (!Micro.tabs[id]) {
+                            Micro.tabs[id] = {};
+                        }
+                        Micro.tabs[id][0] = Micro.tabs[id][0] || existingTabs[i].url;
+
+                        runningQueries++;
+                        chrome.webNavigation.getAllFrames({ tabId: id }, (frames) => {
+                            if (!chrome.runtime.lastError && Micro.tabs[id]) {
+                                for (let ii = 0; ii < frames.length; ii++) {
+                                    Micro.tabs[id][frames[ii].frameId] = Micro.tabs[id][frames[ii].frameId] || frames[ii].url;
+                                }
+                            }
+
+                            runningQueries--;
+                            if (runningQueries === 0) {
+                                resolve();
+                            }
+                        });
+                    }
+                }
+
+                if (runningQueries === 0) {
+                    resolve();
+                }
+            });
+        });
+
+        chrome.webNavigation.onCommitted.addListener(Micro.onCommitted);
+        chrome.tabs.onRemoved.addListener(Micro.onRemoved);
+
+        chrome.webRequest.onBeforeRequest.addListener(Micro.onBeforeRequest, { urls: ["<all_urls>"] }, ["blocking"]);
+    }
+};
+/**
+ * Reset libmicro.
+ * @function
+ */
+Micro.reset = () => {
+    const chrome = Micro.chrome;
+
+    if (!Micro.initialized) {
+        throw new Error("libmicro is not initialized");
+    }
+    Micro.initialized = false;
 
     Micro.config = [];
     Micro.assets = [];
 
-    config.split("\n").map((x) => x.trim()).filter((x) => x.length).forEach((line) => {
-        try {
-            Micro.config.push(new Micro.Filter(line));
-        } catch (err) {
-            console.error("libmicro could not parse the configuration " + line + " because");
-            console.error(err);
-        }
-    });
+    Micro.tabs = {};
 
-    // TODO Parse assets
+    chrome.webNavigation.onCommitted.removeListener(Micro.onCommitted);
+    chrome.tabs.onRemoved.removeListener(Micro.onRemoved);
 
-    chrome
+    chrome.webRequest.onBeforeRequest.removeListener(Micro.onBeforeRequest);
 };
 /**
- * Teardown libmicro, optionally clear parsed objects.
- * @function
- * @param {boolean} [clear=false] - Whether parsed objects should be cleared
- */
-Micro.teardown = (clear = false) => {
-
-
-    if (clear) {
-        Micro.config = [];
-        Micro.assets = [];
-    }
-};
-
-
-/**
- * Read from database.
+ * Set configuration data, will take effect on the next Micro.init().
  * @async @function
+ * @param {string} config - The configuration data.
  */
-Micro.fetch = () => {
+Micro.setConfig = async (config) => {
     const chrome = Micro.chrome;
 
-    return new Promise((resolve, reject) => {
-        chrome.storage.local.get(["libmicro_config", "libmicro_assets"], (items) => {
+    await new Promise((resolve, reject) => {
+        chrome.storage.local.set({ libmicro_config: config }, () => {
             if (chrome.runtime.lastError) {
                 reject(chrome.runtime.lastError);
             } else {
-                resolve([
-                    items.libmicro_config || "",
-                    items.libmicro_assets || "",
-                ]);
+                resolve();
             }
         });
     });
+};
+/**
+ * Set assets data, will take effect on the next Micro.init().
+ * @async @function
+ * @param {string} assets - The assets data.
+ */
+Micro.setAssets = async (assets) => {
+    const chrome = Micro.chrome;
+
+    await new Promise((resolve, reject) => {
+        chrome.storage.local.set({ libmicro_assets: assets }, () => {
+            if (chrome.runtime.lastError) {
+                reject(chrome.runtime.lastError);
+            } else {
+                resolve();
+            }
+        });
+    });
+};
+
+
+/**
+ * Committed event handler.
+ * @function
+ * @param {Object} details - The event details.
+ */
+Micro.onCommitted = (details) => {
+    if (!Micro.tabs[details.tabId]) {
+        Micro.tabs[details.tabId] = {};
+    }
+    Micro.tabs[details.tabId][details.frameId] = details.url;
+};
+/**
+ * Remove event handler
+ * @function
+ * @param {integer} id - The tab that was removed.
+ */
+Micro.onRemoved = (id) => {
+    delete Micro.tabs[id];
+};
+/**
+ * Before request event handler.
+ * @function
+ * @param {Object} details - The event details.
+ * @return {Object|undefined} The decision.
+ */
+Micro.onBeforeRequest = (details) => {
+    console.log(details);
+};
+
+
+/**
+ * Get the URL of a frame of a tab.
+ * @function
+ * @param {integer} tab - The ID of the tab.
+ * @param {integer} frame - The ID of the frame.
+ * @return {string} The URL of the tab, or an empty string if it is not known.
+ */
+Micro.getTabURL = (tab, frame) => {
+    if (Micro.tabs[tab]) {
+        return Micro.tabs[tab][frame] || "";
+    } else {
+        return "";
+    }
 };
 
 
@@ -113,14 +326,17 @@ Micro.Filter = class {
          * @private @prop
          * @const {Array.<string>}
          */
-        this.types = [];
+        this.typeMatch = [];
+        this.typeUmatch = [];
+        /**
+         * The redirection target.
+         * @private @prop
+         * @const {string}
+         */
+        this.redirect = "";
 
 
         const optionAnchor = str.lastIndexOf("$");
-        if (optionAnchor === -1) {
-            throw new Error("libmicro expects 'important' option");
-        }
-
         let matcher = str.substring(0, optionAnchor).trim();
         let options = str.substring(optionAnchor + 1).trim().split(",").map((x) => x.trim());
 
@@ -130,13 +346,13 @@ Micro.Filter = class {
 
 
         processOptions: {
-            if (!options.includes("important")) {
-                throw new Error("libmicro expects 'important' option");
-            }
-
             options.forEach((o) => {
                 const negated = o.startsWith("~");
                 o = o.replace(/^~/, "");
+
+                if (o === "important") {
+                    return;
+                }
 
                 if (o === "first-party") {
                     if (negated) {
@@ -156,9 +372,10 @@ Micro.Filter = class {
                 }
 
                 if (o.startsWith("redirect=")) {
-                    //TODO
-                    throw new Error("libmicro does not yet support 'redirect' option");
+                    this.redirect = o.substring(9);
+                    return;
                 }
+
                 if (o.startsWith("domain=")) {
                     o = o.substring(7);
                     o.split(",").map((x) => x.trim()).forEach((d) => {
@@ -168,6 +385,16 @@ Micro.Filter = class {
                             this.domainsMatch.push(d);
                         }
                     });
+                    return;
+                }
+
+                const normalizedType = this.getNormalizedType(o);
+                if (normalizedType !== null) {
+                    if (negated) {
+                        this.typeUnmatch.push(normalizedType);
+                    } else {
+                        this.typeMatch.push(normalizedType);
+                    }
                     return;
                 }
 
@@ -197,20 +424,91 @@ Micro.Filter = class {
                 break processMatcher;
             }
 
+            let reStr1 = "";
+            let reStr2 = "";
+
             // Start anchor
-            matcher = matcher.replace(/^\|/, "^");
-            // End anchor
-            matvher = matcher.replace(/\|$/, "$");
+            if (matcher.startsWith("|")) {
+                reStr1 += "^";
+                matcher = matcher.substring(1);
+            }
             // Domain anchor, must be processed after start anchor
-            matcher = matcher.replace(/^\^\|\.?/, "^https?:\\/\\/(?:[^./]+(?:\\.|\/))*");
+            if (matcher.startsWith("|")) {
+                reStr1 += "https?:\\/\\/(?:[^./]+(?:\\.))*";
+                matcher = matcher.substring(1);
+            }
+            // End anchor
+            if (matcher.endsWith("|")) {
+                reStr2 = "$" + reStr2;
+                matcher = matcher.slice(0, -1);
+            }
+
+            // General RegExp escape
+            matcher = matcher.replace(/[\\$+?.()|[\]{}]/g, '\\$&');
             // Wildcard matcher
             matcher = matcher.replace(/\*/g, "[\\s\\S]*");
             // Special character matcher
-            matcher = matcher.replace(/\^/g, "(?:[^%.0-9a-z_-]|$)");
-            // General RegExp escape
-            matcher = matcher.replace(/[\\^$*+?.()|[\]{}]/g, '\\$&');
+            matcher = matcher.replace(/\^/g, "(?:[/:?=&]|$)");
 
-            this.re = new RegExp(matcher, "i");
+            this.re = new RegExp(reStr1 + matcher + reStr2, "i");
+        }
+    }
+
+    /**
+     * Get normalized type.
+     * @private @method
+     * @param {string} type - The type to normalize.
+     * @return {string|null} The normalized type.
+     */
+    getNormalizedType(type) {
+        switch (type) {
+            case "main_frame":
+            case "document":
+                return "main_frame";
+
+            case "sub_frame":
+            case "subdocument":
+                return "sub_frame";
+
+            case "stylesheet":
+                return "stylesheet";
+
+            case "script":
+                return "script";
+
+            case "image":
+                return "image";
+
+            case "font":
+                return "font";
+
+            case "object":
+            case "object-subrequest":
+                return "object";
+
+            case "xmlhttprequest":
+                return "xmlhttprequest";
+
+            case "ping":
+                return "ping";
+
+            case "csp_report":
+            case "csp-report":
+            case "cspreport":
+                return "csp_report";
+
+            case "media":
+                return "media";
+
+            case "websocket":
+                return "websocket";
+
+            case "other":
+            case "beacon":
+                return "other";
+
+            default:
+                return null;
         }
     }
 
@@ -219,10 +517,12 @@ Micro.Filter = class {
      * @private @method
      * @param {string} a - The first origin.
      * @param {string} b - The second origin.
+     * @param {boolean} [noSwap=false] - Set to true will always return false if the first
+     ** origin is shorter.
      * @return {boolean} Whether the two origins are the same.
      */
-    areSameOrigin(a, b) {
-        if (b.length > a.length) {
+    areSameOrigin(a, b, noSwap = false) {
+        if (!noSwap && b.length > a.length) {
             const temp = a;
             a = b;
             b = temp;
@@ -242,47 +542,115 @@ Micro.Filter = class {
      * @method
      * @param {string} requester - The requester URL.
      * @param {string} destination - The destination (requested) URL.
+     * @param {string} type - The type of the destination resource.
      * @return {boolean} Whether this request should be blocked.
      */
-    match(requester, destination) {
+    match(requester, destination, type) {
         const domainExtractor = /^https?:\/\/([^/])/;
 
-        let requesterOrigin = domainExtractor.match(requester);
-        if (requesterOrigin === null) {
-            return false;
-        } else {
-            requesterOrigin = requesterOrigin[1];
-        }
-
-        let destinationOrigin = domainExtractor.match(destination);
-        if (destinationOrigin === null) {
-            return false;
-        } else {
-            destinationOrigin = destinationOrigin[1];
-        }
-
-        if (this.domainsMatch[0] === "'self'" && !this.areSameOrigin(requesterOrigin, destinationOrigin)) {
-            return false;
-        }
-        if (this.domainsUnmatch[0] === "'self'" && this.areSameOrigin(requesterOrigin, destinationOrigin)) {
-            return false;
-        }
-
-        const matched = this.domainsMatch.some((d) => {
-            if (this.areSameOrigin(d, requesterOrigin)) {
-                return true;
+        matchParty: {
+            let requesterOrigin = domainExtractor.match(requester);
+            if (requesterOrigin === null) {
+                return false;
+            } else {
+                requesterOrigin = requesterOrigin[1];
             }
-        });
-        const unmatched = this.domainsUnmatch.some((d) => {
-            if (this.areSameOrigin(d, requesterOrigin)) {
-                return true;
-            }
-        });
 
-        if (!matched || unmatched) {
-            return false;
+            let destinationOrigin = domainExtractor.match(destination);
+            if (destinationOrigin === null) {
+                return false;
+            } else {
+                destinationOrigin = destinationOrigin[1];
+            }
+
+            if (this.domainsMatch[0] === "'self'" && !this.areSameOrigin(requesterOrigin, destinationOrigin)) {
+                return false;
+            }
+            if (this.domainsUnmatch[0] === "'self'" && this.areSameOrigin(requesterOrigin, destinationOrigin)) {
+                return false;
+            }
+        }
+
+        matchOrigin: {
+            let matched;
+            if (this.domainsMatch.length) {
+                matched = this.domainsMatch.some((d) => {
+                    if (this.areSameOrigin(requesterOrigin, d, true)) {
+                        return true;
+                    }
+                });
+            } else {
+                matched = true;
+            }
+
+            let unmatched;
+            if (this.domainsUnmatch.length) {
+                unmatched = this.domainsUnmatch.some((d) => {
+                    if (this.areSameOrigin(requesterOrigin, d, true)) {
+                        return true;
+                    }
+                });
+            } else {
+                unmatched = false;
+            }
+
+            if (!matched || unmatched) {
+                return false;
+            }
+        }
+
+        matchType: {
+            let matched;
+            if (this.typeMatch.length) {
+                matched = this.typeMatch.includes(type);
+            } else {
+                matched = true;
+            }
+
+            let unmatched;
+            if (this.typeUmatch.length) {
+                unmatched = this.typeUmatch.includes(type);
+            } else {
+                unmatched = false;
+            }
+
+            if (!matched || unmatched) {
+                return false;
+            }
         }
 
         return this.re.test(destination);
+    }
+};
+/**
+ * Asset class.
+ * @class
+ */
+Micro.Asset = class {
+    /**
+     * Constructor of the filter class.
+     * @constructor
+     * @param {string} name - The name of this asset.
+     * @param {string} payload - The raw payload data.
+     * @param {string} type - The type string.
+     * @param {boolean} [encode=false] - Whether the raw payload should be encoded.
+     */
+    constructor(name, payload, type, encode = false) {
+        /**
+         * The name of this asset.
+         * @prop
+         * @const {string}
+         */
+        this.name = name;
+        /**
+         * The processed payload of this asset.
+         * @prop
+         * @const {string}
+         */
+        this.payload = "";
+
+        this.payload += "data:" + type +
+            (encode ? ";base64," : "") +
+            (encode ? btoa(payload) : payload);
     }
 };
