@@ -296,7 +296,7 @@ Micro.onBeforeRequest = (details) => {
     }
 
     if (requester.length > 0 && !/^https?:\/\//.test(requester)) {
-        return
+        return;
     }
 
     for (let i = 0; i < Micro.config.length; i++) {
@@ -321,7 +321,6 @@ Micro.onBeforeRequest = (details) => {
                             console.log("libmicro performed a redirect, from '" + details.url +
                                 "' to '" + redirect + "'");
                         }
-
 
                         return { redirectUrl: asset.payload };
                     }
