@@ -2,6 +2,9 @@
 
 (async () => {
 
+    // Activate debug mode, do not do this in production
+    Micro.debug = true;
+
     // libmicro use Adblock Plus style filter lists, with a
     // few differences
     //
@@ -14,20 +17,24 @@
     // The filtering logic is also somewhat different, filters will
     // not work out of the box, a transpiler is expected
     await Micro.setConfig(`
-||example.com^$image
-||example.com^$document,redirect=testpage
+||example.com^$document,important
 `);
 
-    // libmicro use uBlock Origin scriptlet resources
+    // libmicro use uBlock Origin style scriptlet resources
+    //
+    // Quantum does not allow cancellation of document request, have
+    // a special asset entry named "libmicro-frame-blocked" to
+    // workaround this problem
+    // You can customize that page the way you like
     await Micro.setAssets(`
-testpage text/html
+libmicro-frame-blocked text/html
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Test Page</title>
+  <title>Frame Blocked</title>
 </head>
 <body>
-  <h1>Test Test</h1>
+  <h1>libmicro blocked this frame</h1>
 </body>
 </html>
 `);

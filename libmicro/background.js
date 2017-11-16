@@ -63,6 +63,11 @@ var Micro = {};
  * @var {boolean}
  */
 Micro.initialized = false;
+/**
+ * Whether debug mode is activated.
+ * @var {boolean}
+ */
+Micro.debug = false;
 
 
 /**
@@ -113,6 +118,7 @@ Micro.init = async () => {
         Micro.config = [];
         Micro.assets = [];
 
+        let invalidConfig = 0;
         config.split("\n").map((x) => x.trim()).filter((x) => x.length > 0).forEach((line) => {
             if (line.startsWith("!") || (line.startsWith("#") && !line.startsWith("##"))) {
                 return;
@@ -121,11 +127,18 @@ Micro.init = async () => {
             try {
                 Micro.config.push(new Micro.Filter(line));
             } catch (err) {
-                // Do not abort, as I do not want one bad filter to crash everything
-                console.error("libmicro could not parse the configuration '" + line + "' because");
-                console.error(err);
+                invalidConfig++;
+                if (Micro.debug) {
+                    // Do not abort, as I do not want one bad filter to crash everything
+                    console.error("libmicro could not parse the configuration '" + line + "' because");
+                    console.error(err);
+                    console.trace();
+                }
             }
         });
+        if (invalidConfig > 0) {
+            console.warn("libmicro could not parse " + invalidConfig.toString() + " filters");
+        }
 
         let buffer = [];
         assets = assets.split("\n").map((x) => x.trim());
@@ -277,7 +290,54 @@ Micro.onRemoved = (id) => {
  * @return {Object|undefined} The decision.
  */
 Micro.onBeforeRequest = (details) => {
-    console.log(details);
+    let requester = details.documentUrl || details.originUrl;
+    if (!requester) {
+        requester = Micro.getTabURL(details.tabId, details.frameId);
+    }
+
+    if (requester.length > 0 && !/^https?:\/\//.test(requester)) {
+        return
+    }
+
+    for (let i = 0; i < Micro.config.length; i++) {
+        const filter = Micro.config[i];
+
+        if (filter.match(requester, details.url, details.type)) {
+            let redirect = filter.redirect;
+
+            // Quantum does not allow cancellation of document request
+            if ((details.type === "main_frame" || details.type === "sub_frame") &&
+                /firefox/i.test(navigator.userAgent)) {
+                redirect = "libmicro-frame-blocked";
+            }
+
+
+            if (redirect !== "") {
+                for (let j = 0; j < Micro.assets.length; j++) {
+                    const asset = Micro.assets[j];
+
+                    if (asset.name === redirect) {
+                        if (Micro.debug) {
+                            console.log("libmicro performed a redirect, from '" + details.url +
+                                "' to '" + redirect + "'");
+                        }
+
+
+                        return { redirectUrl: asset.payload };
+                    }
+                }
+
+                if (Micro.debug) {
+                    console.error("libmicro could not find asset '" + redirect + "'");
+                }
+            }
+
+            if (Micro.debug) {
+                console.log("libmicro canceled a request to '" + details.url + "'");
+            }
+            return { cancel: true };
+        }
+    }
 };
 
 
@@ -546,17 +606,17 @@ Micro.Filter = class {
      * @return {boolean} Whether this request should be blocked.
      */
     match(requester, destination, type) {
-        const domainExtractor = /^https?:\/\/([^/])/;
+        const domainExtractor = /^https?:\/\/([^/]+)/;
 
         matchParty: {
-            let requesterOrigin = domainExtractor.match(requester);
+            let requesterOrigin = domainExtractor.exec(requester);
             if (requesterOrigin === null) {
                 return false;
             } else {
                 requesterOrigin = requesterOrigin[1];
             }
 
-            let destinationOrigin = domainExtractor.match(destination);
+            let destinationOrigin = domainExtractor.exec(destination);
             if (destinationOrigin === null) {
                 return false;
             } else {
@@ -631,11 +691,11 @@ Micro.Asset = class {
      * Constructor of the filter class.
      * @constructor
      * @param {string} name - The name of this asset.
-     * @param {string} payload - The raw payload data.
      * @param {string} type - The type string.
+     * @param {string} payload - The raw payload data.
      * @param {boolean} [encode=false] - Whether the raw payload should be encoded.
      */
-    constructor(name, payload, type, encode = false) {
+    constructor(name, type, payload, encode = false) {
         /**
          * The name of this asset.
          * @prop
@@ -650,7 +710,7 @@ Micro.Asset = class {
         this.payload = "";
 
         this.payload += "data:" + type +
-            (encode ? ";base64," : "") +
-            (encode ? btoa(payload) : payload);
+            (encode ? "" : ";base64") + "," +
+            (encode ? payload : btoa(payload));
     }
 };
