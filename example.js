@@ -5,8 +5,8 @@
     // Activate debug mode, do not do this in production
     Micro.debug = true;
 
-    // libmicro use Adblock Plus style filter lists, with a
-    // few differences
+    // libmicro use Adblock Plus style filter lists, with a few
+    // differences
     //
     // libmicro does not parse white lists as it is designed to assist
     // a main firewall, instead of taking the whole task itself
@@ -15,9 +15,11 @@
     // and vice versa, play around with it to find out the difference
     //
     // The filtering logic is also somewhat different, filters will
-    // not work out of the box, a transpiler is expected
+    // not work out of the box, you are responsible in transpiling
+    // the filters if needed
     await Micro.setConfig(`
 ||example.com^$document,important
+||example.com^$libmicro,inject=hello-world.js
 `);
 
     // libmicro use uBlock Origin style scriptlet resources
@@ -37,6 +39,9 @@ libmicro-frame-blocked text/html
   <h1>libmicro blocked this frame</h1>
 </body>
 </html>
+
+hello-world.js text/javascript
+console.log("Hello from libmicro");
 `);
 
     // setConfig and setAssets can run in parallel, but you must
@@ -45,6 +50,10 @@ libmicro-frame-blocked text/html
     // setConfig and setAssets persist across browser restarts,
     // but are not synced across connected devices
 
+    // Initialize libmicro
     await Micro.init();
+
+    // Call this function when you wants to disable libmicro
+    //Micro.teardown();
 
 })();
