@@ -128,7 +128,6 @@ Micro.init = async () => {
                 return;
             }
 
-            // TODO Process scriptlet filters
             try {
                 Micro.filter.push(new Micro.Filter(line));
             } catch (err) {
@@ -306,6 +305,7 @@ Micro.onBeforeRequest = (details) => {
         return;
     }
 
+    // TODO Check scriptlet filters
     for (let i = 0; i < Micro.filter.length; i++) {
         const filter = Micro.filter[i];
 
