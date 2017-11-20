@@ -2,14 +2,20 @@
   "compileOnSave": true,
   "compilerOptions": {
     "forceConsistentCasingInFileNames": true,
+    "lib": [ "es7", "dom" ],
     "noEmitOnError": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+    "outDir": "dist",
     "removeComments": true,
+    "rootDir": "src",
     "sourceMap": true,
     "strict": true,
     "target": "es2017"
-  }
+  },
+  "exclude": [
+    "node_modules"
+  ]
 }
