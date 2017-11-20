@@ -8,7 +8,7 @@
   "background": {
     "persistent": true,
     "scripts": [
-      "libmicro/background.js",
+      "background.js",
       "example.js"
     ]
   },
