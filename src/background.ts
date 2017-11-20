@@ -27,7 +27,7 @@ Chromium 62+
 Chrome   62+
 Opera    48+
 Quantum  57+
-Edge     16+
+Edge     16+ (libedgyfy required)
 
 
 libmicro needs these permissions
@@ -56,40 +56,105 @@ to run before other scripts of your extension.
 
 /**
  * libmicro main namespace.
- * @const {Namespace}
+ * @namespace
  */
-var Micro = {};
-/**
- * Whether libmicro is initialized.
- * @readonly @var {boolean}
- */
-Micro.initialized = false;
-/**
- * Whether debug mode is activated.
- * @var {boolean}
- */
-Micro.debug = false;
+namespace Micro {
+    /**
+     * libmicro main class.
+     * @class
+     */
+    export class Micro {
+        /**
+         * Whether libmicro is initialized.
+         * @readonly @prop
+         * @var {boolean}
+         */
+        private _initialized: boolean = false;
+        get initialized() {
+            return this._initialized;
+        }
 
+        /**
+         * Whether debug mode is activated.
+         * @prop
+         * @var {boolean}
+         */
+        public debug: boolean = false;
 
-/**
- * The chrome namespace.
- * @private @const {Namespace}
- */
-Micro.chrome = /edge/i.test(navigator.userAgent) ? window.browser : window.chrome;
-/**
- * Filters and assets.
- * @private @var {Array.<Micro.Filter>}
- * @private @var {Array.<Micro.Scritplet>}
- * @private @var {Array.<Micro.Asset>}
- */
-Micro.filter = [];
-Micro.script = [];
-Micro.assets = [];
-/**
- * Tab store.
- * @private @var {Object.<Object.<string>>}
- */
-Micro.tabs = {};
+        /**
+         * Filters and assets.
+         * @private @prop
+         * @var {Array.<Filter>}
+         * @var {Array.<Asset>}
+         */
+        private _filters: Filter[] = [];
+        private _assets: Asset[] = [];
+
+        /**
+         * Tab store.
+         * @private @prop
+         * @var {Object.<Object.<string>>}
+         */
+        private _tabs: any = {};
+
+        public async init(): Promise<void> {
+            // Teardown if needed
+            if (this._initialized) {
+                this.teardown();
+            }
+            this._initialized = true;
+
+            // Parse filters and assets
+            let filters: string;
+            let assets: string;
+            try {
+                await new Promise((resolve, reject) => {
+                    chrome.storage.local.get(["libmicro_filters", "libmicro_assets"], (items) => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                        } else {
+                            filters = items.libmicro_filters || "";
+                            assets = items.libmicro_assets || "";
+                            resolve();
+                        }
+                    });
+                });
+            } catch (e) {
+                console.error(e);
+            }
+
+            let invalidFilters: number = 0;
+            filters.split("\n").forEach((filter: string): void => {
+                filter = filter.trim();
+                if (filter.length === 0) {
+                    return;
+                }
+                if (filter.charAt(0) === "!") {
+                    return;
+                }
+                if (filter.charAt(0) === "#" && filter.charAt(1) !== "#") {
+                    return;
+                }
+
+                //TODO
+                void invalidFilters;
+                
+            });
+        }
+
+        public teardown(): void {
+
+        }
+    };
+
+    class Filter {
+
+    }
+    class Asset {
+
+    }
+}
+
 
 
 /**
