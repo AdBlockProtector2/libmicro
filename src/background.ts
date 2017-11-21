@@ -395,13 +395,15 @@ namespace Micro {
             let domainMatched: boolean = true;
             if (this._domainMatch.length > 0) {
                 domainMatched = this._domainMatch.some((d: string): boolean => {
-                    return this._sameOrigin(requesterDomain.toString(), d);
+                    // @ts-ignore Type is safe
+                    return this._sameOrigin(requesterDomain, d);
                 });
             }
             let domainUnmatched: boolean = false;
             if (this._domainUnmatch.length > 0) {
                 domainUnmatched = this._domainUnmatch.some((d: string): boolean => {
-                    return this._sameOrigin(requesterDomain.toString(), d);
+                    // @ts-ignore Type is safe
+                    return this._sameOrigin(requesterDomain, d);
                 });
             }
             if (!domainMatched || domainUnmatched) {
@@ -622,11 +624,11 @@ namespace Micro {
             this._thisOnCommitted = this._onCommitted.bind(this);
             this._thisOnRemoved = this._onRemoved.bind(this);
             this._thisOnBeforeRequest = this._onBeforeRequest.bind(this);
-            // @ts-ignore
+            // @ts-ignore Type is safe
             chrome.webNavigation.onCommitted.addListener(this._thisOnCommitted);
-            // @ts-ignore
+            // @ts-ignore Type is safe
             chrome.tabs.onRemoved.addListener(this._thisOnRemoved);
-            // @ts-ignore
+            // @ts-ignore Type is safe
             chrome.webRequest.onBeforeRequest.addListener(this._thisOnBeforeRequest, { urls: ["<all_urls>"] }, ["blocking"]);
         }
         /**

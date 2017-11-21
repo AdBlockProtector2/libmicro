@@ -210,13 +210,13 @@ var Micro;
             let domainMatched = true;
             if (this._domainMatch.length > 0) {
                 domainMatched = this._domainMatch.some((d) => {
-                    return this._sameOrigin(requesterDomain.toString(), d);
+                    return this._sameOrigin(requesterDomain, d);
                 });
             }
             let domainUnmatched = false;
             if (this._domainUnmatch.length > 0) {
                 domainUnmatched = this._domainUnmatch.some((d) => {
-                    return this._sameOrigin(requesterDomain.toString(), d);
+                    return this._sameOrigin(requesterDomain, d);
                 });
             }
             if (!domainMatched || domainUnmatched) {
