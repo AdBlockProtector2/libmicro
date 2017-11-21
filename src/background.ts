@@ -60,14 +60,386 @@ to run before other scripts of your extension.
  */
 namespace Micro {
     /**
+     * Used instance names.
+     * @var
+     */
+    let usedNames: string[] = [];
+
+    /**
+     * Tab store interfaces.
+     * @interface
+     */
+    interface Tab<Frame> {
+        [key: number]: Frame,
+    }
+    interface Frame {
+        [key: number]: string,
+    }
+
+    /**
+     * Asset interface.
+     * @interface
+     */
+    interface Asset {
+        name: string,
+        raw: string,
+        payload: string,
+    }
+
+    /**
+     * Filter types.
+     * @enum
+     */
+    const enum FilterType { BLOCK, REDIRECT, REPLACE, INJECT };
+    const TypeNormalizer = {
+        "main_frame": "main_frame",
+        "document": "main_frame",
+
+        "sub_frame": "sub_frame",
+        "subdocument": "sub_frame",
+
+        "stylesheet": "stylesheet",
+        "css": "stylesheet",
+
+        "script": "script",
+        "js": "script",
+
+        "image": "image",
+        "img": "image",
+
+        "font": "font",
+
+        "object": "object",
+        "object-subrequest": "object",
+
+        "xmlhttprequest": "xmlhttprequest",
+        "xhr": "xmlhttprequest",
+
+        "ping": "ping",
+
+        "csp_report": "csp_report",
+        "csp-report": "csp_report",
+        "cspreport": "csp_report",
+
+        "media": "media",
+
+        "websocket": "websocket",
+        "socket": "websocket",
+
+        "other": "other",
+        "beacon": "beacon",
+    };
+    /**
+     * Filter class.
+     * @class
+     */
+    class Filter {
+        /**
+         * The main matcher of this filter.
+         * @prop
+         */
+        private _re: RegExp;
+
+        /**
+         * Domain restriction.
+         * @prop
+         */
+        private _domainMatch: string[] = [];
+        private _domainUnmatch: string[] = [];
+        /**
+         * Type restriction.
+         * @prop
+         */
+        private _typeMatch: string[] = [];
+        private _typeUnmatch: string[] = [];
+
+        /**
+         * The type of this filter.
+         * @readonly @prop
+         */
+        private _type: FilterType = FilterType.BLOCK;
+        get type(): FilterType {
+            return this._type;
+        }
+
+        /**
+         * Extra data for the filter, depending the filter type, this can vary.
+         * @readonly @prop
+         */
+        private _data: string = "";
+        get data(): string {
+            return this._data;
+        }
+
+        /**
+         * Filter constructor.
+         * @constructor
+         * @param filter - The raw filter.
+         */
+        constructor(filter: string) {
+            // Separate filter
+            const optionAnchor: number = filter.lastIndexOf("$");
+            let matcher: string;
+            let options: string[];
+            if (optionAnchor === -1) {
+                matcher = filter;
+                options = [];
+            } else {
+                matcher = filter.substring(0, optionAnchor).trim();
+                options = filter.substring(optionAnchor + 1).trim().split(",");
+                options = options.map((x: string): string => x.trim());
+            }
+
+            // Check white list
+            if (matcher.startsWith("@@")) {
+                throw new Error("libmicro does not handle white list");
+            }
+
+            // Parse options
+            options.forEach((o: string): void => {
+                // Negation
+                const negated: boolean = o.startsWith("~");
+                if (negated) {
+                    o = o.substring(1);
+                }
+
+                // Ignored
+                if (o === "libmicro" || o === "important") {
+                    return;
+                }
+
+                // Party, error check is later
+                if (o === "first-party") {
+                    if (negated) {
+                        this._domainUnmatch.push("'self'");
+                    } else {
+                        this._domainMatch.push("'self'");
+                    }
+                    return;
+                }
+                if (o === "third-party") {
+                    if (negated) {
+                        this._domainMatch.push("'self'");
+                    } else {
+                        this._domainUnmatch.push("'self'");
+                    }
+                    return;
+                }
+
+                // Action type
+                if (o.startsWith("redirect=") || o.startsWith("replace=") || o.startsWith("inject=")) {
+                    if (this._type !== FilterType.BLOCK) {
+                        throw new Error("libmicro only accept one of 'redirect=', 'replace=', and 'inject=' option");
+                    }
+                }
+                if (o.startsWith("redirect=")) {
+                    this._type = FilterType.REDIRECT;
+                    this._data = o.substring("redirect=".length);
+                    return;
+                }
+                if (o.startsWith("replace=")) {
+                    this._type = FilterType.REPLACE;
+                    this._data = o.substring("replace=".length);
+                    return;
+                }
+                if (o.startsWith("inject=")) {
+                    this._type = FilterType.INJECT;
+                    this._data = o.substring("inject=".length);
+                    return;
+                }
+
+                // Domain restriction
+                if (o.startsWith("domain=")) {
+                    o = o.substring("domain=".length);
+                    o.split(",").map((x: string): string => x.trim()).forEach((d: string): void => {
+                        if (d.startsWith("~")) {
+                            this._domainUnmatch.push(d.substring(1));
+                        } else {
+                            this._domainMatch.push(d);
+                        }
+                    });
+                    return;
+                }
+
+                // Type restriction
+                if (TypeNormalizer.hasOwnProperty(o)) {
+                    if (negated) {
+                        this._typeUnmatch.push(o);
+                    } else {
+                        this._typeMatch.push(o);
+                    }
+                    return;
+                }
+
+                // Error
+                throw new Error("libmicro does not accept '" + o + "' option");
+            });
+            if (this._domainMatch.includes("'self'") && this._domainUnmatch.includes("'self'")) {
+                throw new Error("libmicro only accepts one of 'first-party' and 'third-party' option");
+            }
+            if (this._domainMatch.includes("'self'") && this._domainMatch.length > 1) {
+                throw new Error("libmicro only accepts one of 'first-party' and 'domain' option");
+            }
+            if (this._domainUnmatch.includes("'self'") && this._domainUnmatch.length > 1) {
+                throw new Error("libmicro only accepts one of 'third-party' and 'domain' option");
+            }
+
+            // Parse main matcher
+            if (/^\**$/.test(matcher)) {
+                this._re = /[\s\S]/;
+            } else if (matcher.length > 2 && matcher.startsWith("/") && matcher.endsWith("/")) {
+                this._re = new RegExp(matcher.slice(1, -1), "i");
+            } else {
+                let reStrStart: string = "";
+                let reStrEnd: string = "";
+
+                // Start anchor
+                if (matcher.startsWith("|")) {
+                    reStrStart += "^";
+                    matcher = matcher.substring(1);
+                }
+                // Domain anchor, must be processed after start anchor
+                if (matcher.startsWith("|")) {
+                    reStrStart += "https?:\\/\\/(?:[^./]+(?:\\.))*";
+                    matcher = matcher.substring(1);
+                }
+                // End anchor
+                if (matcher.endsWith("|")) {
+                    reStrEnd = "$" + reStrEnd;
+                    matcher = matcher.slice(0, -1);
+                }
+
+                // General RegExp escape
+                matcher = matcher.replace(/[\\$+?.()|[\]{}]/g, '\\$&');
+                // Wildcard matcher
+                matcher = matcher.replace(/\*/g, "[\\s\\S]*");
+                // Special character matcher
+                matcher = matcher.replace(/\^/g, "(?:[/:?=&]|$)");
+
+                this._re = new RegExp(reStrStart + matcher + reStrEnd, "i");
+            }
+        }
+
+        /**
+         * Check if a is a subdomain of b.
+         * @method
+         * @param a - The domain.
+         * @param b - The origin.
+         * @return whether a is a subdomain of b.
+         */
+        private _domCmp(a: string, b: string): boolean {
+            return a.endsWith(b) && (a.length === b.length || a.charAt(a.length - b.length - 1) === ".");
+        }
+        /**
+         * Check if a and b are part of the same origin.
+         * @method
+         * @param a - A domain.
+         * @param b - Another domain.
+         * @return Whether these two domains are of the same origin.
+         */
+        private _sameOrigin(a: string, b: string): boolean {
+            if (a.length >= b.length) {
+                return this._domCmp(a, b);
+            } else {
+                return this._domCmp(b, a);
+            }
+        }
+
+        /**
+         * Perform a match.
+         * @method
+         * @param requester - The requester URL.
+         * @param destination - The requested URL.
+         * @param type - The type of requested resources.
+         * @return Whether this filter matches the request.
+         */
+        private readonly _domainExtractor: RegExp = /^https?:\/\/([^/]+)/;
+        public match(requester: string, destination: string, type: string): boolean {
+            // Process domain
+            let requesterDomain: string | string[] | null = this._domainExtractor.exec(requester);
+            if (requesterDomain === null) {
+                return false;
+            } else {
+                requesterDomain = requesterDomain[1];
+            }
+
+            let destinationDomain: string | string[] | null = this._domainExtractor.exec(destination);
+            if (destinationDomain === null) {
+                return false;
+            } else {
+                destinationDomain = destinationDomain[1];
+            }
+
+            // Check party
+            if (this._domainMatch[0] === "'self'" && !this._sameOrigin(requesterDomain, destinationDomain)) {
+                return false;
+            }
+            if (this._domainUnmatch[0] === "'self'" && this._sameOrigin(requesterDomain, destinationDomain)) {
+                return false;
+            }
+
+            // Check type restriction
+            let typeMatched: boolean = true;
+            if (this._typeMatch.length > 0) {
+                typeMatched = this._typeMatch.includes(type);
+            }
+            let typeUnmatched: boolean = false;
+            if (this._typeUnmatch.length > 0) {
+                typeUnmatched = this._typeUnmatch.includes(type);
+            }
+            if (!typeMatched || typeUnmatched) {
+                return false;
+            }
+
+            // Check domain restriction
+            let domainMatched: boolean = true;
+            if (this._domainMatch.length > 0) {
+                domainMatched = this._domainMatch.some((d: string): boolean => {
+                    return this._sameOrigin(requesterDomain.toString(), d);
+                });
+            }
+            let domainUnmatched: boolean = false;
+            if (this._domainUnmatch.length > 0) {
+                domainUnmatched = this._domainUnmatch.some((d: string): boolean => {
+                    return this._sameOrigin(requesterDomain.toString(), d);
+                });
+            }
+            if (!domainMatched || domainUnmatched) {
+                return false;
+            }
+
+            // Apply main matcher
+            return this._re.test(destination);
+        }
+    }
+
+    /**
      * libmicro main class.
      * @class
      */
     export class Micro {
         /**
+         * The name of this instance of libmicro.
+         * @prop
+         */
+        private _name: string = "";
+        /**
+         * Constructor.
+         * @constructor
+         * @param [name=""] - The name of this instance, one name can be constructed once.
+         */
+        constructor(name: string = "") {
+            if (usedNames.includes(name)) {
+                throw new Error("This instance was already constructed");
+            }
+
+            usedNames.push(name);
+            this._name = name;
+        }
+
+        /**
          * Whether libmicro is initialized.
          * @readonly @prop
-         * @var {boolean}
          */
         private _initialized: boolean = false;
         get initialized() {
@@ -77,26 +449,34 @@ namespace Micro {
         /**
          * Whether debug mode is activated.
          * @prop
-         * @var {boolean}
          */
         public debug: boolean = false;
 
         /**
          * Filters and assets.
-         * @private @prop
-         * @var {Array.<Filter>}
-         * @var {Array.<Asset>}
+         * @prop
          */
-        private _filters: Filter[] = [];
         private _assets: Asset[] = [];
+        private _filters: Filter[] = [];
 
         /**
          * Tab store.
-         * @private @prop
-         * @var {Object.<Object.<string>>}
+         * @prop
          */
-        private _tabs: any = {};
+        private _tabs: Tab<Frame> = {};
 
+        /**
+         * Event listeners with keyword this bound to them.
+         * @prop
+         */
+        private _thisOnCommitted: Function;
+        private _thisOnRemoved: Function;
+        private _thisOnBeforeRequest: Function;
+
+        /**
+         * Initialize or reinitialize this instance.
+         * @method
+         */
         public async init(): Promise<void> {
             // Teardown if needed
             if (this._initialized) {
@@ -104,25 +484,63 @@ namespace Micro {
             }
             this._initialized = true;
 
-            // Parse filters and assets
-            let filters: string;
-            let assets: string;
+            // Load assets and filters
+            let assets: string = "";
+            let filters: string = "";
             try {
-                await new Promise((resolve, reject) => {
-                    chrome.storage.local.get(["libmicro_filters", "libmicro_assets"], (items) => {
+                await new Promise((resolve: Function, reject: Function): void => {
+                    chrome.storage.local.get([
+                        "libmicro_assets_" + this._name,
+                        "libmicro_filters_" + this._name,
+                    ], (items: Object): void => {
                         if (chrome.runtime.lastError) {
                             reject(chrome.runtime.lastError);
                         } else {
-                            filters = items.libmicro_filters || "";
-                            assets = items.libmicro_assets || "";
+                            assets = items["libmicro_assets_" + this._name] || "";
+                            filters = items["libmicro_filters_" + this._name] || "";
                             resolve();
                         }
                     });
                 });
-            } catch (e) {
+            } catch (e: Error) {
+                console.error("libmicro could not read database, an empty database will be used");
                 console.error(e);
             }
 
+            // Parse assets
+            let assetBuffer = [];
+            assets += "\n"; // In case there is not a trailing new line
+            assets.split("\n").forEach((line: string) => {
+                line = line.trim();
+                if (line.startsWith("#")) {
+                    return;
+                }
+
+                if (line.length === 0) {
+                    if (assetBuffer.length > 0) {
+                        const meta: string[] = assetBuffer.shift().split(" ");
+                        const raw: string = assetBuffer.join("");
+                        let payload: string = "data:" + meta[1];
+                        if (meta[1].includes(";base64")) {
+                            payload += "," + raw;
+                        } else {
+                            payload += ";base64," + btoa(raw);
+                        }
+
+                        this._assets.push({
+                            name: meta[0],
+                            raw: raw,
+                            payload: payload,
+                        });
+
+                        assetBuffer = [];
+                    }
+                } else {
+                    assetBuffer.push(line);
+                }
+            });
+
+            // Parse filters
             let invalidFilters: number = 0;
             filters.split("\n").forEach((filter: string): void => {
                 filter = filter.trim();
@@ -136,142 +554,122 @@ namespace Micro {
                     return;
                 }
 
-                //TODO
-                void invalidFilters;
-                
+                try {
+                    this._filters.push(new Filter(filter));
+                } catch (e: Error) {
+                    // Do not abort, as I do not want one bad filter to crash everything
+                    console.error("libmicro failed to parse '" + filter + "'");
+                    console.error(e);
+                }
             });
+            if (invalidFilters > 0) {
+                console.error("libmicro could not parse " + invalidFilters.toString() + " of the filters");
+            }
+
+            // Query existing tabs
+            this._tabs = {};
+            try {
+                await new Promise((resolve: Function, reject: Function): void => {
+                    let runningQueries: number = 0;
+
+                    chrome.tabs.query({}, (existingTabs: chrome.tabs.Tab[]): void => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                        }
+
+                        for (let i = 0; i < existingTabs.length; i++) {
+                            const id = existingTabs[i].id;
+                            if (id !== chrome.tabs.TAB_ID_NONE) {
+                                if (!this._tabs[id]) {
+                                    this._tabs[id] = {};
+                                }
+                                this._tabs[id][0] = this._tabs[id][0] || existingTabs[i].url;
+
+                                runningQueries++;
+                                chrome.webNavigation.getAllFrames({ tabId: id }, (frames: chrome.webNavigation.GetAllFrameResultDetails[]): void => {
+                                    if (chrome.runtime.lastError) {
+                                        // Can be caused by race condition, just ignore
+                                        return;
+                                    }
+
+                                    if (!chrome.runtime.lastError && this._tabs[id]) {
+                                        for (let ii = 0; ii < frames.length; ii++) {
+                                            this._tabs[id][frames[ii].frameId] = this._tabs[id][frames[ii].frameId] || frames[ii].url;
+                                        }
+                                    }
+
+                                    runningQueries--;
+                                    if (runningQueries === 0) {
+                                        resolve();
+                                    }
+                                });
+                            }
+                        }
+                    });
+                });
+            } catch (e: Error) {
+                console.error("libmicro could not load existing tabs, an empty tab store will be used");
+                console.error(e);
+            }
+
+            // Bind event handlers
         }
 
         public teardown(): void {
 
         }
-    };
-
-    class Filter {
-
-    }
-    class Asset {
-
     }
 }
 
 
 
-/**
- * Initialize or reinitialize libmicro.
- * @async @function
- */
-Micro.init = async () => {
-    const chrome = Micro.chrome;
 
-    if (Micro.initialized) {
-        Micro.teardown();
-    }
-    Micro.initialized = true;
+let buffer = [];
 
-    parseConfig: {
-        let [config, assets] = await new Promise((resolve, reject) => {
-            chrome.storage.local.get(["libmicro_config", "libmicro_assets"], (items) => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
-                    resolve([
-                        items.libmicro_config || "",
-                        items.libmicro_assets || "",
-                    ]);
-                }
-            });
-        });
-
-        Micro.filter = [];
-        Micro.script = [];
-        Micro.assets = [];
-
-        let invalidConfig = 0;
-        config.split("\n").map((x) => x.trim()).filter((x) => x.length > 0).forEach((line) => {
-            if (line.startsWith("!") || (line.startsWith("#") && !line.startsWith("##"))) {
-                return;
-            }
-
-            try {
-                Micro.filter.push(new Micro.Filter(line));
-            } catch (err) {
-                invalidConfig++;
-                if (Micro.debug) {
-                    // Do not abort, as I do not want one bad filter to crash everything
-                    console.error("libmicro could not parse the configuration '" + line + "' because");
-                    console.error(err);
-                    console.trace();
-                }
-            }
-        });
-        if (invalidConfig > 0) {
-            console.warn("libmicro could not parse " + invalidConfig.toString() + " filters");
-        }
-
-        let buffer = [];
-        assets = assets.split("\n").map((x) => x.trim());
-        assets.push("");
-        assets.forEach((line) => {
-            if (line.startsWith("#")) {
-                return;
-            }
-
-            if (line.length === 0) {
-                if (buffer.length > 0) {
-                    const [name, type] = buffer.shift().split(" ");
-                    Micro.assets.push(new Micro.Asset(name, type, buffer.join(""), type.includes(";base64")));
-                    buffer = [];
-                }
-                return;
-            }
-
-            buffer.push(line);
-        });
     }
 
-    setupListeners: {
-        Micro.tabs = {};
+setupListeners: {
+    Micro.tabs = {};
 
-        await new Promise((resolve, reject) => {
-            let runningQueries = 0;
+    await new Promise((resolve, reject) => {
+        let runningQueries = 0;
 
-            chrome.tabs.query({}, (existingTabs) => {
-                for (let i = 0; i < existingTabs.length; i++) {
-                    const id = existingTabs[i].id;
-                    if (id !== chrome.tabs.TAB_ID_NONE) {
-                        if (!Micro.tabs[id]) {
-                            Micro.tabs[id] = {};
-                        }
-                        Micro.tabs[id][0] = Micro.tabs[id][0] || existingTabs[i].url;
-
-                        runningQueries++;
-                        chrome.webNavigation.getAllFrames({ tabId: id }, (frames) => {
-                            if (!chrome.runtime.lastError && Micro.tabs[id]) {
-                                for (let ii = 0; ii < frames.length; ii++) {
-                                    Micro.tabs[id][frames[ii].frameId] = Micro.tabs[id][frames[ii].frameId] || frames[ii].url;
-                                }
-                            }
-
-                            runningQueries--;
-                            if (runningQueries === 0) {
-                                resolve();
-                            }
-                        });
+        chrome.tabs.query({}, (existingTabs) => {
+            for (let i = 0; i < existingTabs.length; i++) {
+                const id = existingTabs[i].id;
+                if (id !== chrome.tabs.TAB_ID_NONE) {
+                    if (!Micro.tabs[id]) {
+                        Micro.tabs[id] = {};
                     }
-                }
+                    Micro.tabs[id][0] = Micro.tabs[id][0] || existingTabs[i].url;
 
-                if (runningQueries === 0) {
-                    resolve();
+                    runningQueries++;
+                    chrome.webNavigation.getAllFrames({ tabId: id }, (frames) => {
+                        if (!chrome.runtime.lastError && Micro.tabs[id]) {
+                            for (let ii = 0; ii < frames.length; ii++) {
+                                Micro.tabs[id][frames[ii].frameId] = Micro.tabs[id][frames[ii].frameId] || frames[ii].url;
+                            }
+                        }
+
+                        runningQueries--;
+                        if (runningQueries === 0) {
+                            resolve();
+                        }
+                    });
                 }
-            });
+            }
+
+            if (runningQueries === 0) {
+                resolve();
+            }
         });
+    });
 
-        chrome.webNavigation.onCommitted.addListener(Micro.onCommitted);
-        chrome.tabs.onRemoved.addListener(Micro.onRemoved);
+    chrome.webNavigation.onCommitted.addListener(Micro.onCommitted);
+    chrome.tabs.onRemoved.addListener(Micro.onRemoved);
 
-        chrome.webRequest.onBeforeRequest.addListener(Micro.onBeforeRequest, { urls: ["<all_urls>"] }, ["blocking"]);
-    }
+    chrome.webRequest.onBeforeRequest.addListener(Micro.onBeforeRequest, { urls: ["<all_urls>"] }, ["blocking"]);
+}
 };
 /**
  * Teardown libmicro.
@@ -423,378 +821,5 @@ Micro.getTabURL = (tab, frame) => {
         return Micro.tabs[tab][frame] || "";
     } else {
         return "";
-    }
-};
-
-
-/**
- * Filter class.
- * @private @class
- */
-Micro.Filter = class {
-    /**
-     * Constructor of the filter class.
-     * @constructor
-     * @param {string} str - The filter string
-     */
-    constructor(str) {
-        /**
-         * The domain matcher.
-         * @private @prop
-         * @const {RegExp}
-         */
-        this.re;
-        /**
-         * Domain restriction.
-         * @private @prop
-         * @const {Array.<string>}
-         */
-        this.domainsMatch = [];
-        this.domainsUnmatch = [];
-        /**
-         * Type restriction.
-         * @private @prop
-         * @const {Array.<string>}
-         */
-        this.typeMatch = [];
-        this.typeUmatch = [];
-        /**
-         * The redirection target.
-         * @private @prop
-         * @const {string}
-         */
-        this.redirect = "";
-
-
-        const optionAnchor = str.lastIndexOf("$");
-        let matcher = str.substring(0, optionAnchor).trim();
-        let options = str.substring(optionAnchor + 1).trim().split(",").map((x) => x.trim());
-
-        if (matcher.startsWith("@@")) {
-            throw new Error("libmicro does not handle white list");
-        }
-
-
-        processOptions: {
-            options.forEach((o) => {
-                const negated = o.startsWith("~");
-                o = o.replace(/^~/, "");
-
-                if (o === "libmicro" || o === "important") {
-                    return;
-                }
-
-                if (o === "first-party") {
-                    if (negated) {
-                        this.domainsUnmatch.push("'self'");
-                    } else {
-                        this.domainsMatch.push("'self'");
-                    }
-                    return;
-                }
-                if (o === "third-party") {
-                    if (negated) {
-                        this.domainsMatch.push("'self'");
-                    } else {
-                        this.domainsUnmatch.push("'self'");
-                    }
-                    return;
-                }
-
-                if (o.startsWith("redirect=")) {
-                    this.redirect = o.substring(9);
-                    return;
-                }
-                if (o.startsWith("inject=")) {
-                    // TODO
-                }
-
-                if (o.startsWith("domain=")) {
-                    o = o.substring(7);
-                    o.split(",").map((x) => x.trim()).forEach((d) => {
-                        if (d.startsWith("~")) {
-                            this.domainsUnmatch.push(d.substring(1));
-                        } else {
-                            this.domainsMatch.push(d);
-                        }
-                    });
-                    return;
-                }
-
-                const normalizedType = this.getNormalizedType(o);
-                if (normalizedType !== null) {
-                    if (negated) {
-                        this.typeUnmatch.push(normalizedType);
-                    } else {
-                        this.typeMatch.push(normalizedType);
-                    }
-                    return;
-                }
-
-                throw new Error("libmicro does not accept '" + o + "' option");
-            });
-
-            if (this.domainsMatch.includes("'self'") && this.domainsUnmatch.includes("'self'")) {
-                throw new Error("libmicro only accepts one of 'first-party' and 'third-party' options");
-            }
-            if (this.domainsMatch.includes("'self'") && this.domainsMatch.length > 1) {
-                throw new Error("libmicro only accepts one of 'first-party' and 'domain' options");
-            }
-            if (this.domainsUnmatch.includes("'self'") && this.domainsUnmatch.length > 1) {
-                throw new Error("libmicro only accepts one of 'third-party' and 'domain' options");
-            }
-        }
-
-
-        processMatcher: {
-            if (matcher === "" || matcher === "*") {
-                this.re = /[\s\S]/;
-                break processMatcher;
-            }
-
-            if (matcher.length > 2 && matcher.startsWith("/") && matcher.endsWith("/")) {
-                this.re = new RegExp(matcher.slice(1, -1), "i");
-                break processMatcher;
-            }
-
-            let reStr1 = "";
-            let reStr2 = "";
-
-            // Start anchor
-            if (matcher.startsWith("|")) {
-                reStr1 += "^";
-                matcher = matcher.substring(1);
-            }
-            // Domain anchor, must be processed after start anchor
-            if (matcher.startsWith("|")) {
-                reStr1 += "https?:\\/\\/(?:[^./]+(?:\\.))*";
-                matcher = matcher.substring(1);
-            }
-            // End anchor
-            if (matcher.endsWith("|")) {
-                reStr2 = "$" + reStr2;
-                matcher = matcher.slice(0, -1);
-            }
-
-            // General RegExp escape
-            matcher = matcher.replace(/[\\$+?.()|[\]{}]/g, '\\$&');
-            // Wildcard matcher
-            matcher = matcher.replace(/\*/g, "[\\s\\S]*");
-            // Special character matcher
-            matcher = matcher.replace(/\^/g, "(?:[/:?=&]|$)");
-
-            this.re = new RegExp(reStr1 + matcher + reStr2, "i");
-        }
-    }
-
-    /**
-     * Get normalized type.
-     * @private @method
-     * @param {string} type - The type to normalize.
-     * @return {string|null} The normalized type.
-     */
-    getNormalizedType(type) {
-        switch (type) {
-            case "main_frame":
-            case "document":
-                return "main_frame";
-
-            case "sub_frame":
-            case "subdocument":
-                return "sub_frame";
-
-            case "stylesheet":
-                return "stylesheet";
-
-            case "script":
-                return "script";
-
-            case "image":
-                return "image";
-
-            case "font":
-                return "font";
-
-            case "object":
-            case "object-subrequest":
-                return "object";
-
-            case "xmlhttprequest":
-                return "xmlhttprequest";
-
-            case "ping":
-                return "ping";
-
-            case "csp_report":
-            case "csp-report":
-            case "cspreport":
-                return "csp_report";
-
-            case "media":
-                return "media";
-
-            case "websocket":
-                return "websocket";
-
-            case "other":
-            case "beacon":
-                return "other";
-
-            default:
-                return null;
-        }
-    }
-
-    /**
-     * Check if two origin are the same.
-     * @private @method
-     * @param {string} a - The first origin.
-     * @param {string} b - The second origin.
-     * @param {boolean} [noSwap=false] - Set to true will always return false if the first
-     ** origin is shorter.
-     * @return {boolean} Whether the two origins are the same.
-     */
-    areSameOrigin(a, b, noSwap = false) {
-        if (!noSwap && b.length > a.length) {
-            const temp = a;
-            a = b;
-            b = temp;
-        }
-
-        if (a === b) {
-            return true;
-        }
-        if (a.endsWith(b) && a.charAt(a.length - b.length - 1) === '.') {
-            return true;
-        }
-
-        return false;
-    }
-    /**
-     * Check if a request should be blocked.
-     * @method
-     * @param {string} requester - The requester URL.
-     * @param {string} destination - The destination (requested) URL.
-     * @param {string} type - The type of the destination resource.
-     * @return {boolean} Whether this request should be blocked.
-     */
-    match(requester, destination, type) {
-        const domainExtractor = /^https?:\/\/([^/]+)/;
-
-        matchParty: {
-            let requesterOrigin = domainExtractor.exec(requester);
-            if (requesterOrigin === null) {
-                return false;
-            } else {
-                requesterOrigin = requesterOrigin[1];
-            }
-
-            let destinationOrigin = domainExtractor.exec(destination);
-            if (destinationOrigin === null) {
-                return false;
-            } else {
-                destinationOrigin = destinationOrigin[1];
-            }
-
-            if (this.domainsMatch[0] === "'self'" && !this.areSameOrigin(requesterOrigin, destinationOrigin)) {
-                return false;
-            }
-            if (this.domainsUnmatch[0] === "'self'" && this.areSameOrigin(requesterOrigin, destinationOrigin)) {
-                return false;
-            }
-        }
-
-        matchOrigin: {
-            let matched;
-            if (this.domainsMatch.length) {
-                matched = this.domainsMatch.some((d) => {
-                    if (this.areSameOrigin(requesterOrigin, d, true)) {
-                        return true;
-                    }
-                });
-            } else {
-                matched = true;
-            }
-
-            let unmatched;
-            if (this.domainsUnmatch.length) {
-                unmatched = this.domainsUnmatch.some((d) => {
-                    if (this.areSameOrigin(requesterOrigin, d, true)) {
-                        return true;
-                    }
-                });
-            } else {
-                unmatched = false;
-            }
-
-            if (!matched || unmatched) {
-                return false;
-            }
-        }
-
-        matchType: {
-            let matched;
-            if (this.typeMatch.length) {
-                matched = this.typeMatch.includes(type);
-            } else {
-                matched = true;
-            }
-
-            let unmatched;
-            if (this.typeUmatch.length) {
-                unmatched = this.typeUmatch.includes(type);
-            } else {
-                unmatched = false;
-            }
-
-            if (!matched || unmatched) {
-                return false;
-            }
-        }
-
-        return this.re.test(destination);
-    }
-};
-/**
- * Scriptlet class.
- * @private @class
- */
-Micro.Scritplet = class {
-
-};
-/**
- * Asset class.
- * @private @class
- */
-Micro.Asset = class {
-    /**
-     * Constructor of the filter class.
-     * @constructor
-     * @param {string} name - The name of this asset.
-     * @param {string} type - The type string.
-     * @param {string} payload - The raw payload data.
-     * @param {boolean} [encode=false] - Whether the raw payload should be encoded.
-     */
-    constructor(name, type, payload, encode = false) {
-        /**
-         * The name of this asset.
-         * @prop
-         * @const {string}
-         */
-        this.name = name;
-        /**
-         * The raw payload.
-         * @prop
-         * @const {string}
-         */
-        this.raw = payload;
-        /**
-         * The processed payload of this asset.
-         * @prop
-         * @const {string}
-         */
-        this.payload = "data:" + type +
-            (encode ? "" : ";base64") + "," +
-            (encode ? payload : btoa(payload));
     }
 };
