@@ -346,10 +346,10 @@ var Micro;
                         for (let i = 0; i < existingTabs.length; i++) {
                             const tid = existingTabs[i].id;
                             if (typeof tid === "undefined") {
-                                return;
+                                continue;
                             }
                             if (tid === chrome.tabs.TAB_ID_NONE) {
-                                return;
+                                continue;
                             }
                             if (!this._tabs[tid]) {
                                 this._tabs[tid] = {};

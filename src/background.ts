@@ -621,10 +621,10 @@ namespace Micro {
                         for (let i = 0; i < existingTabs.length; i++) {
                             const tid: number | undefined = existingTabs[i].id;
                             if (typeof tid === "undefined") {
-                                return;
+                                continue;
                             }
                             if (tid === chrome.tabs.TAB_ID_NONE) {
-                                return;
+                                continue;
                             }
 
                             if (!this._tabs[tid]) {
