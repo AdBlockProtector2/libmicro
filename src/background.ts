@@ -91,7 +91,15 @@ namespace Micro {
      * @enum
      */
     const enum FilterType { BLOCK, REDIRECT, REPLACE, INJECT }
-    const TypeNormalizer = {
+
+    /**
+     * Type normalizer.
+     * @const
+     */
+    interface TypeTable {
+        [key: string]: string,
+    }
+    const TypeNormalizer: TypeTable = {
         "main_frame": "main_frame",
         "document": "main_frame",
 
@@ -264,9 +272,9 @@ namespace Micro {
                 // Type restriction
                 if (TypeNormalizer.hasOwnProperty(o)) {
                     if (negated) {
-                        this._typeUnmatch.push(o);
+                        this._typeUnmatch.push(TypeNormalizer[o]);
                     } else {
-                        this._typeMatch.push(o);
+                        this._typeMatch.push(TypeNormalizer[o]);
                     }
                     return;
                 }
@@ -525,7 +533,7 @@ namespace Micro {
                     chrome.storage.local.get([
                         "libmicro_assets_" + this._name,
                         "libmicro_filters_" + this._name,
-                    ], (items: Object): void => {
+                    ], (items: ChromeStoragePayload): void => {
                         if (chrome.runtime.lastError) {
                             reject(chrome.runtime.lastError);
                         } else {
@@ -541,7 +549,7 @@ namespace Micro {
             }
 
             // Parse assets
-            let assetBuffer = [];
+            let assetBuffer: string[] = [];
             assets += "\n"; // In case there is not a trailing new line
             assets.split("\n").forEach((line: string) => {
                 line = line.trim();
@@ -551,6 +559,7 @@ namespace Micro {
 
                 if (line.length === 0) {
                     if (assetBuffer.length > 0) {
+                        // @ts-ignore Length of buffer array is already checked
                         const meta: string[] = assetBuffer.shift().split(" ");
                         const raw: string = assetBuffer.join("");
                         let payload: string = "data:" + meta[1];
@@ -610,32 +619,42 @@ namespace Micro {
                         }
 
                         for (let i = 0; i < existingTabs.length; i++) {
-                            const id = existingTabs[i].id;
-                            if (id !== chrome.tabs.TAB_ID_NONE) {
-                                if (!this._tabs[id]) {
-                                    this._tabs[id] = {};
-                                }
-                                this._tabs[id][0] = this._tabs[id][0] || existingTabs[i].url;
-
-                                runningQueries++;
-                                chrome.webNavigation.getAllFrames({ tabId: id }, (frames: chrome.webNavigation.GetAllFrameResultDetails[]): void => {
-                                    if (chrome.runtime.lastError) {
-                                        // Can be caused by race condition, just ignore
-                                        return;
-                                    }
-
-                                    if (!chrome.runtime.lastError && this._tabs[id]) {
-                                        for (let ii = 0; ii < frames.length; ii++) {
-                                            this._tabs[id][frames[ii].frameId] = this._tabs[id][frames[ii].frameId] || frames[ii].url;
-                                        }
-                                    }
-
-                                    runningQueries--;
-                                    if (runningQueries === 0) {
-                                        resolve();
-                                    }
-                                });
+                            const tid: number | undefined = existingTabs[i].id;
+                            if (typeof tid === "undefined") {
+                                return;
                             }
+                            if (tid === chrome.tabs.TAB_ID_NONE) {
+                                return;
+                            }
+
+                            if (!this._tabs[tid]) {
+                                this._tabs[tid] = {};
+                            }
+                            // @ts-ignore Permission "tabs" is required so the url will be present
+                            this._tabs[tid][0] = this._tabs[tid][0] || existingTabs[i].url;
+
+                            runningQueries++;
+                            chrome.webNavigation.getAllFrames({ tabId: tid }, (frames: chrome.webNavigation.GetAllFrameResultDetails[] | null): void => {
+                                if (chrome.runtime.lastError) {
+                                    // Can be caused by race condition, just ignore
+                                    return;
+                                }
+
+                                if (this._tabs[tid]) {
+                                    // @ts-ignore Argument will only be null when chrome.runtime.lastError is set
+                                    for (let ii = 0; ii < frames.length; ii++) {
+                                        // @ts-ignore
+                                        const fid: number = frames[ii].frameId;
+                                        // @ts-ignore
+                                        this._tabs[tid][fid] = this._tabs[tid][fid] || frames[ii].url;
+                                    }
+                                }
+
+                                runningQueries--;
+                                if (runningQueries === 0) {
+                                    resolve();
+                                }
+                            });
                         }
                     });
                 });
@@ -778,7 +797,7 @@ namespace Micro {
                             break;
 
                         case FilterType.REDIRECT:
-                            let asset: Asset;
+                            let asset: Asset | undefined;
                             for (let i = 0; i < this._assets.length; i++) {
                                 if (this._assets[i].name === filter.data) {
                                     asset = this._assets[i];

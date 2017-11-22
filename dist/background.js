@@ -112,10 +112,10 @@ var Micro;
                 }
                 if (TypeNormalizer.hasOwnProperty(o)) {
                     if (negated) {
-                        this._typeUnmatch.push(o);
+                        this._typeUnmatch.push(TypeNormalizer[o]);
                     }
                     else {
-                        this._typeMatch.push(o);
+                        this._typeMatch.push(TypeNormalizer[o]);
                     }
                     return;
                 }
@@ -344,28 +344,33 @@ var Micro;
                             reject(chrome.runtime.lastError);
                         }
                         for (let i = 0; i < existingTabs.length; i++) {
-                            const id = existingTabs[i].id;
-                            if (id !== chrome.tabs.TAB_ID_NONE) {
-                                if (!this._tabs[id]) {
-                                    this._tabs[id] = {};
-                                }
-                                this._tabs[id][0] = this._tabs[id][0] || existingTabs[i].url;
-                                runningQueries++;
-                                chrome.webNavigation.getAllFrames({ tabId: id }, (frames) => {
-                                    if (chrome.runtime.lastError) {
-                                        return;
-                                    }
-                                    if (!chrome.runtime.lastError && this._tabs[id]) {
-                                        for (let ii = 0; ii < frames.length; ii++) {
-                                            this._tabs[id][frames[ii].frameId] = this._tabs[id][frames[ii].frameId] || frames[ii].url;
-                                        }
-                                    }
-                                    runningQueries--;
-                                    if (runningQueries === 0) {
-                                        resolve();
-                                    }
-                                });
+                            const tid = existingTabs[i].id;
+                            if (typeof tid === "undefined") {
+                                return;
                             }
+                            if (tid === chrome.tabs.TAB_ID_NONE) {
+                                return;
+                            }
+                            if (!this._tabs[tid]) {
+                                this._tabs[tid] = {};
+                            }
+                            this._tabs[tid][0] = this._tabs[tid][0] || existingTabs[i].url;
+                            runningQueries++;
+                            chrome.webNavigation.getAllFrames({ tabId: tid }, (frames) => {
+                                if (chrome.runtime.lastError) {
+                                    return;
+                                }
+                                if (this._tabs[tid]) {
+                                    for (let ii = 0; ii < frames.length; ii++) {
+                                        const fid = frames[ii].frameId;
+                                        this._tabs[tid][fid] = this._tabs[tid][fid] || frames[ii].url;
+                                    }
+                                }
+                                runningQueries--;
+                                if (runningQueries === 0) {
+                                    resolve();
+                                }
+                            });
                         }
                     });
                 });
@@ -485,4 +490,3 @@ var Micro;
     }
     Micro_1.Micro = Micro;
 })(Micro || (Micro = {}));
-//# sourceMappingURL=background.js.map
