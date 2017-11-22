@@ -90,7 +90,7 @@ namespace Micro {
      * Filter types.
      * @enum
      */
-    const enum FilterType { BLOCK, REDIRECT, REPLACE, INJECT };
+    const enum FilterType { BLOCK, REDIRECT, REPLACE, INJECT }
     const TypeNormalizer = {
         "main_frame": "main_frame",
         "document": "main_frame",
@@ -284,6 +284,22 @@ namespace Micro {
                 throw new Error("libmicro only accepts one of 'third-party' and 'domain' option");
             }
 
+            // Quantum does not allow cancellation of document request
+            if (/firefox/i.test(navigator.userAgent) && this._type === FilterType.BLOCK) {
+                let typeMatched: boolean = true;
+                if (this._typeMatch.length > 0) {
+                    typeMatched = this._typeMatch.includes("main_frame") || this._typeMatch.includes("sub_frame");
+                }
+                let typeUnmatched: boolean = false;
+                if (this._typeUnmatch.length > 0) {
+                    typeUnmatched = this._typeUnmatch.includes("main_frame") || this._typeUnmatch.includes("sub_frame");
+                }
+                if (typeMatched && !typeUnmatched) {
+                    this._type = FilterType.REDIRECT;
+                    this._data = "libmicro-frame-blocked";
+                }
+            }
+
             // Parse main matcher
             if (/^\**$/.test(matcher)) {
                 this._re = /[\s\S]/;
@@ -421,6 +437,14 @@ namespace Micro {
      */
     interface ChromeStoragePayload {
         [key: string]: string
+    }
+    /**
+     * Before request event decision.
+     * @interface
+     */
+    interface BeforeRequestDecision {
+        redirectUrl?: string,
+        cancel?: boolean,
     }
     /**
      * libmicro main class.
@@ -727,54 +751,57 @@ namespace Micro {
          * @param details - The event details
          * @return The decision.
          */
-        private _onBeforeRequest(details: chrome.webRequest.WebRequestBodyDetails): chrome.webRequest.WebRequestBodyEvent {
-            // TODO Fix this
-
-            let requester = details.documentUrl || details.originUrl;
+        private _onBeforeRequest(details: chrome.webRequest.WebRequestBodyDetails): BeforeRequestDecision | void {
+            // @ts-ignore Quantum has these properties
+            let requester: string | undefined = details.documentUrl || details.originUrl;
             if (!requester) {
-                requester = Micro.getTabURL(details.tabId, details.frameId);
+                requester = this._getTabURL(details.tabId, details.frameId);
             }
 
             if (requester.length > 0 && !/^https?:\/\//.test(requester)) {
                 return;
             }
 
-            // TODO Check scriptlet filters
-            for (let i = 0; i < Micro.filter.length; i++) {
-                const filter = Micro.filter[i];
-
+            for (let i = 0; i < this._filters.length; i++) {
+                const filter = this._filters[i];
                 if (filter.match(requester, details.url, details.type)) {
-                    let redirect = filter.redirect;
-
-                    // Quantum does not allow cancellation of document request
-                    if ((details.type === "main_frame" || details.type === "sub_frame") &&
-                        /firefox/i.test(navigator.userAgent)) {
-                        redirect = "libmicro-frame-blocked";
-                    }
-
-                    if (redirect !== "") {
-                        for (let j = 0; j < Micro.assets.length; j++) {
-                            const asset = Micro.assets[j];
-
-                            if (asset.name === redirect) {
-                                if (Micro.debug) {
-                                    console.log("libmicro performed a redirect, from '" + details.url +
-                                        "' to '" + redirect + "'");
-                                }
-
-                                return { redirectUrl: asset.payload };
+                    switch (filter.type) {
+                        case FilterType.BLOCK:
+                            if (this.debug) {
+                                console.log("libmicro canceled a request to '" + details.url + "'");
                             }
-                        }
+                            return { cancel: true };
 
-                        if (Micro.debug) {
-                            console.error("libmicro could not find asset '" + redirect + "'");
-                        }
-                    }
+                        case FilterType.INJECT:
+                            // TODO
+                            console.warn("libmicro does not yet have implementation of scriptlet injection");
+                            break;
 
-                    if (Micro.debug) {
-                        console.log("libmicro canceled a request to '" + details.url + "'");
+                        case FilterType.REDIRECT:
+                            let asset: Asset;
+                            for (let i = 0; i < this._assets.length; i++) {
+                                if (this._assets[i].name === filter.data) {
+                                    asset = this._assets[i];
+                                    break;
+                                }
+                            }
+                            if (asset) {
+                                if (this.debug) {
+                                    console.log("libmicro performed a redirect, from '" + details.url + "' to '" + filter.data + "'");
+                                }
+                                return { redirectUrl: asset.payload };
+                            } else {
+                                if (this.debug) {
+                                    console.error("libmicro could not find asset '" + filter.data + "', the request is blocked as a fallback");
+                                }
+                                return { cancel: true };
+                            }
+
+                        case FilterType.REPLACE:
+                            // TODO
+                            console.warn("libmicro does not yet have implementation of request replacement");
+                            break;
                     }
-                    return { cancel: true };
                 }
             }
         }

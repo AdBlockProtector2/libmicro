@@ -2,7 +2,6 @@
 var Micro;
 (function (Micro_1) {
     let usedNames = [];
-    ;
     const TypeNormalizer = {
         "main_frame": "main_frame",
         "document": "main_frame",
@@ -130,6 +129,20 @@ var Micro;
             }
             if (this._domainUnmatch.includes("'self'") && this._domainUnmatch.length > 1) {
                 throw new Error("libmicro only accepts one of 'third-party' and 'domain' option");
+            }
+            if (/firefox/i.test(navigator.userAgent) && this._type === 0) {
+                let typeMatched = true;
+                if (this._typeMatch.length > 0) {
+                    typeMatched = this._typeMatch.includes("main_frame") || this._typeMatch.includes("sub_frame");
+                }
+                let typeUnmatched = false;
+                if (this._typeUnmatch.length > 0) {
+                    typeUnmatched = this._typeUnmatch.includes("main_frame") || this._typeUnmatch.includes("sub_frame");
+                }
+                if (typeMatched && !typeUnmatched) {
+                    this._type = 1;
+                    this._data = "libmicro-frame-blocked";
+                }
             }
             if (/^\**$/.test(matcher)) {
                 this._re = /[\s\S]/;
@@ -425,38 +438,47 @@ var Micro;
         _onBeforeRequest(details) {
             let requester = details.documentUrl || details.originUrl;
             if (!requester) {
-                requester = Micro.getTabURL(details.tabId, details.frameId);
+                requester = this._getTabURL(details.tabId, details.frameId);
             }
             if (requester.length > 0 && !/^https?:\/\//.test(requester)) {
                 return;
             }
-            for (let i = 0; i < Micro.filter.length; i++) {
-                const filter = Micro.filter[i];
+            for (let i = 0; i < this._filters.length; i++) {
+                const filter = this._filters[i];
                 if (filter.match(requester, details.url, details.type)) {
-                    let redirect = filter.redirect;
-                    if ((details.type === "main_frame" || details.type === "sub_frame") &&
-                        /firefox/i.test(navigator.userAgent)) {
-                        redirect = "libmicro-frame-blocked";
-                    }
-                    if (redirect !== "") {
-                        for (let j = 0; j < Micro.assets.length; j++) {
-                            const asset = Micro.assets[j];
-                            if (asset.name === redirect) {
-                                if (Micro.debug) {
-                                    console.log("libmicro performed a redirect, from '" + details.url +
-                                        "' to '" + redirect + "'");
+                    switch (filter.type) {
+                        case 0:
+                            if (this.debug) {
+                                console.log("libmicro canceled a request to '" + details.url + "'");
+                            }
+                            return { cancel: true };
+                        case 3:
+                            console.warn("libmicro does not yet have implementation of scriptlet injection");
+                            break;
+                        case 1:
+                            let asset;
+                            for (let i = 0; i < this._assets.length; i++) {
+                                if (this._assets[i].name === filter.data) {
+                                    asset = this._assets[i];
+                                    break;
+                                }
+                            }
+                            if (asset) {
+                                if (this.debug) {
+                                    console.log("libmicro performed a redirect, from '" + details.url + "' to '" + filter.data + "'");
                                 }
                                 return { redirectUrl: asset.payload };
                             }
-                        }
-                        if (Micro.debug) {
-                            console.error("libmicro could not find asset '" + redirect + "'");
-                        }
+                            else {
+                                if (this.debug) {
+                                    console.error("libmicro could not find asset '" + filter.data + "', the request is blocked as a fallback");
+                                }
+                                return { cancel: true };
+                            }
+                        case 2:
+                            console.warn("libmicro does not yet have implementation of request replacement");
+                            break;
                     }
-                    if (Micro.debug) {
-                        console.log("libmicro canceled a request to '" + details.url + "'");
-                    }
-                    return { cancel: true };
                 }
             }
         }
