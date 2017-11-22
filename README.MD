@@ -1,4 +1,4 @@
-# libmicro
+# libmicro [![Dependencies](https://david-dm.org/AdBlockProtector2/libmicro.svg)](https://david-dm.org/AdBlockProtector2/libmicro)
 
 Embeddable firewall for modern browser extensions
 
