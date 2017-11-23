@@ -81,7 +81,7 @@ namespace Micro {
      * @interface
      */
     interface Asset {
-        name: string,
+        name: string, // TODO Why not make name the key
         raw: string,
         payload: string,
     }
@@ -90,7 +90,7 @@ namespace Micro {
      * Filter types.
      * @enum
      */
-    const enum FilterType { BLOCK, REDIRECT, REPLACE, INJECT }
+    const enum FilterType { BLOCK, REDIRECT, REPLACE, INJECT } // TODO Add CSP
 
     /**
      * Type normalizer.
