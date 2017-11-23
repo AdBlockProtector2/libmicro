@@ -791,11 +791,11 @@ namespace Micro {
                     if (asset) {
                         chrome.tabs.executeScript(details.tabId, {
                             frameId: details.frameId,
-                            code: asset.raw,
+                            code: "Micro.exec(`" + asset.raw.replace(/`/g, "\\`") + "`);",
                             runAt: "document_start",
                         });
                     } else {
-                        console.error("libmicro could not find asset '" + filter.data + "'");
+                        console.error("libmicro could not find asset '" + filter.data + "', the scriptlet is not injected");
                     }
                 }
             }

@@ -1,10 +1,21 @@
 // See background.ts for more information
 "use strict";
 
-const exec = (script: string): void => {
-    const elem: HTMLElement = document.createElement("script");
-    elem.textContent = script;
-    // @ts-ignore Every browser has it
-    document.body.prepend(elem);
-    elem.remove();
-};
+/**
+ * libmicro main namespace.
+ * @namespace
+ */
+namespace Micro {
+    /**
+     * Execute code in page script scope.
+     * @function
+     * @param script - The payload.
+     */
+    export const exec = (script: string): void => {
+        const elem: HTMLElement = document.createElement("script");
+        elem.textContent = script;
+        // @ts-ignore Every browser has it
+        document.body.prepend(elem);
+        elem.remove();
+    };
+}

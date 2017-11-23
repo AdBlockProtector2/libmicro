@@ -20,7 +20,8 @@
     // not work out of the box, you are responsible in transpiling
     // the filters if needed
     await instance.setFilters(`
-! ||example.com^$document,important
+||test.example.com^$document,important
+||test2.example.com^$libmicro,redirect=hello-world.html
 ||example.com^$libmicro,inject=hello-world.js
 `);
 
@@ -42,9 +43,20 @@ libmicro-frame-blocked text/html
 </body>
 </html>
 
+hello-world.html text/html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Hello from libmicro</title>
+</head>
+<body>
+  <h1>Hello from libmicro</h1>
+</body>
+</html>
+
 hello-world.js text/javascript
-console.log("Hello from libmicro");
-var test = 1;
+const hello_text = "Hello from libmicro";
+console.log(hello_text);
 `);
 
     // setConfig and setAssets can run in parallel, but you must
