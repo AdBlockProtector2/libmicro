@@ -300,6 +300,11 @@ var Micro;
                 if (line.length === 0) {
                     if (assetBuffer.length > 0) {
                         const meta = assetBuffer.shift().split(" ");
+                        if (meta.length !== 2) {
+                            console.error("libmicro could not parse an asset, syntax error near '" + meta.join(" ") + "'");
+                            assetBuffer = [];
+                            return;
+                        }
                         const raw = assetBuffer.join("");
                         let payload = "data:" + meta[1];
                         if (meta[1].includes(";base64")) {

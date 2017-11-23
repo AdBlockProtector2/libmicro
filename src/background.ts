@@ -565,6 +565,11 @@ namespace Micro {
                     if (assetBuffer.length > 0) {
                         // @ts-ignore Length of buffer array is already checked
                         const meta: string[] = assetBuffer.shift().split(" ");
+                        if (meta.length !== 2) {
+                            console.error("libmicro could not parse an asset, syntax error near '" + meta.join(" ") + "'");
+                            assetBuffer = [];
+                            return;
+                        }
                         const raw: string = assetBuffer.join("");
                         let payload: string = "data:" + meta[1];
                         if (meta[1].includes(";base64")) {
