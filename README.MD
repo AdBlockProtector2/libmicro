@@ -6,7 +6,7 @@ Please open an issue if there is something you want me to know.
 
 ## Writing libmicro filters
 
-**Domain matching**
+**URL Matching**
 ```
 |   Anchor beginning or ending if it is the first or last character
 ||  Anchor domain if it is the first characters
