@@ -22,6 +22,7 @@ Otherwise, other characters except those special characters above will be treate
 ```
 ~<option>           Negate the next option
 
+
 libmicro            Limit to libmicro only, this filter should be ignored by other firewalls
 important           Does nothing for now, libmicro does not yet accept white lists
 Note: These two options cannot be negated
