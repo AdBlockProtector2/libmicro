@@ -246,6 +246,9 @@ var Micro;
             this._assets = [];
             this._filters = [];
             this._tabs = {};
+            this._thisOnCommitted = undefined;
+            this._thisOnRemoved = undefined;
+            this._thisOnBeforeRequest = undefined;
             if (usedNames.includes(name)) {
                 throw new Error("This instance was already constructed");
             }
@@ -379,9 +382,11 @@ var Micro;
                 console.error("libmicro could not load existing tabs, an empty tab store will be used");
                 console.error(e);
             }
-            this._thisOnCommitted = this._onCommitted.bind(this);
-            this._thisOnRemoved = this._onRemoved.bind(this);
-            this._thisOnBeforeRequest = this._onBeforeRequest.bind(this);
+            if (typeof this._thisOnCommitted === "undefined") {
+                this._thisOnCommitted = this._onCommitted.bind(this);
+                this._thisOnRemoved = this._onRemoved.bind(this);
+                this._thisOnBeforeRequest = this._onBeforeRequest.bind(this);
+            }
             chrome.webNavigation.onCommitted.addListener(this._thisOnCommitted);
             chrome.tabs.onRemoved.addListener(this._thisOnRemoved);
             chrome.webRequest.onBeforeRequest.addListener(this._thisOnBeforeRequest, { urls: ["<all_urls>"] }, ["blocking"]);
@@ -394,6 +399,9 @@ var Micro;
             this._assets = [];
             this._filters = [];
             this._tabs = {};
+            chrome.webNavigation.onCommitted.removeListener(this._thisOnCommitted);
+            chrome.tabs.onRemoved.removeListener(this._thisOnRemoved);
+            chrome.webRequest.onBeforeRequest.removeListener(this._thisOnBeforeRequest);
         }
         setFilters(filters) {
             return new Promise((resolve, reject) => {
@@ -450,6 +458,9 @@ var Micro;
             }
             for (let i = 0; i < this._filters.length; i++) {
                 const filter = this._filters[i];
+                if (filter.type === 3) {
+                    continue;
+                }
                 if (filter.match(requester, details.url, details.type)) {
                     switch (filter.type) {
                         case 0:
@@ -457,9 +468,6 @@ var Micro;
                                 console.log("libmicro canceled a request to '" + details.url + "'");
                             }
                             return { cancel: true };
-                        case 3:
-                            console.warn("libmicro does not yet have implementation of scriptlet injection");
-                            break;
                         case 1:
                             let asset;
                             for (let i = 0; i < this._assets.length; i++) {

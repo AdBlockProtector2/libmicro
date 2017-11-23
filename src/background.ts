@@ -426,7 +426,7 @@ namespace Micro {
             let domainUnmatched: boolean = false;
             if (this._domainUnmatch.length > 0) {
                 domainUnmatched = this._domainUnmatch.some((d: string): boolean => {
-                    // @ts-ignore Type is safe
+                    // @ts-ignore
                     return this._sameOrigin(requesterDomain, d);
                 });
             }
@@ -510,9 +510,9 @@ namespace Micro {
          * Event listeners with keyword this bound to them.
          * @prop
          */
-        private _thisOnCommitted: Function;
-        private _thisOnRemoved: Function;
-        private _thisOnBeforeRequest: Function;
+        private _thisOnCommitted: Function | undefined = undefined;
+        private _thisOnRemoved: Function | undefined = undefined;
+        private _thisOnBeforeRequest: Function | undefined = undefined;
 
         /**
          * Initialize or reinitialize this libmicro instance.
@@ -664,14 +664,16 @@ namespace Micro {
             }
 
             // Bind event handlers
-            this._thisOnCommitted = this._onCommitted.bind(this);
-            this._thisOnRemoved = this._onRemoved.bind(this);
-            this._thisOnBeforeRequest = this._onBeforeRequest.bind(this);
+            if (typeof this._thisOnCommitted === "undefined") {
+                this._thisOnCommitted = this._onCommitted.bind(this);
+                this._thisOnRemoved = this._onRemoved.bind(this);
+                this._thisOnBeforeRequest = this._onBeforeRequest.bind(this);
+            }
             // @ts-ignore Type is safe
             chrome.webNavigation.onCommitted.addListener(this._thisOnCommitted);
-            // @ts-ignore Type is safe
+            // @ts-ignore
             chrome.tabs.onRemoved.addListener(this._thisOnRemoved);
-            // @ts-ignore Type is safe
+            // @ts-ignore
             chrome.webRequest.onBeforeRequest.addListener(this._thisOnBeforeRequest, { urls: ["<all_urls>"] }, ["blocking"]);
         }
         /**
@@ -688,7 +690,12 @@ namespace Micro {
             this._filters = [];
             this._tabs = {};
 
-            // TODO remove event listeners
+            // @ts-ignore Type is safe
+            chrome.webNavigation.onCommitted.removeListener(this._thisOnCommitted);
+            // @ts-ignore
+            chrome.tabs.onRemoved.removeListener(this._thisOnRemoved);
+            // @ts-ignore
+            chrome.webRequest.onBeforeRequest.removeListener(this._thisOnBeforeRequest);
         }
 
         /**
@@ -783,6 +790,12 @@ namespace Micro {
 
             for (let i = 0; i < this._filters.length; i++) {
                 const filter = this._filters[i];
+
+                if (filter.type === FilterType.INJECT) {
+                    // TODO Optimize this
+                    continue;
+                }
+
                 if (filter.match(requester, details.url, details.type)) {
                     switch (filter.type) {
                         case FilterType.BLOCK:
@@ -790,11 +803,6 @@ namespace Micro {
                                 console.log("libmicro canceled a request to '" + details.url + "'");
                             }
                             return { cancel: true };
-
-                        case FilterType.INJECT:
-                            // TODO
-                            console.warn("libmicro does not yet have implementation of scriptlet injection");
-                            break;
 
                         case FilterType.REDIRECT:
                             let asset: Asset | undefined;
@@ -817,7 +825,8 @@ namespace Micro {
                             }
 
                         case FilterType.REPLACE:
-                            // TODO
+                            // Only possible in Quantum
+                            // TODO Implement this
                             console.warn("libmicro does not yet have implementation of request replacement");
                             break;
                     }
