@@ -60,24 +60,24 @@ img                 Alias of image
 font                Limit to fonts
 
 object              Limit to Flash objects
-object-subrequest   Alias to object
+object-subrequest   Alias of object
 
 xmlhttprequest      Limit to XMLHttpRequests
-xhr                 Alias to xmlhttprequest
+xhr                 Alias of xmlhttprequest
 
 ping                Limit to pings
 
 csp_report          Limit to Content Security Policy violation reports
-csp-report          Alias to csp_report
-cspreport           Alias to csp_report
+csp-report          Alias of csp_report
+cspreport           Alias of csp_report
 
 media               Limit to medias
 
 websocket           Limit to WebSockets
-socket              Alias to websocket
+socket              Alias of websocket
 
 other               Limit to other types
-beacon              Alias to other
+beacon              Alias of other
 ```
 
 **Matching Logic**
