@@ -105,6 +105,7 @@ namespace Micro {
 
         "sub_frame": "sub_frame",
         "subdocument": "sub_frame",
+        "iframe": "sub_frame",
 
         "stylesheet": "stylesheet",
         "css": "stylesheet",
@@ -135,7 +136,7 @@ namespace Micro {
         "socket": "websocket",
 
         "other": "other",
-        "beacon": "beacon",
+        "beacon": "other",
     };
     /**
      * Filter class.
@@ -213,6 +214,9 @@ namespace Micro {
 
                 // Ignored
                 if (o === "libmicro" || o === "important") {
+                    if (negated) {
+                        throw new Error("libmicro does not accept negated 'libmicro' and 'important' option")
+                    }
                     return;
                 }
 
@@ -286,10 +290,10 @@ namespace Micro {
                 throw new Error("libmicro only accepts one of 'first-party' and 'third-party' option");
             }
             if (this._domainMatch.includes("'self'") && this._domainMatch.length > 1) {
-                throw new Error("libmicro only accepts one of 'first-party' and 'domain' option");
+                throw new Error("libmicro only accepts one of 'first-party' and 'domain=' option");
             }
             if (this._domainUnmatch.includes("'self'") && this._domainUnmatch.length > 1) {
-                throw new Error("libmicro only accepts one of 'third-party' and 'domain' option");
+                throw new Error("libmicro only accepts one of 'third-party' and 'domain=' option");
             }
 
             // Quantum does not allow cancellation of document request

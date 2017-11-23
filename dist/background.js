@@ -7,6 +7,7 @@ var Micro;
         "document": "main_frame",
         "sub_frame": "sub_frame",
         "subdocument": "sub_frame",
+        "iframe": "sub_frame",
         "stylesheet": "stylesheet",
         "css": "stylesheet",
         "script": "script",
@@ -26,7 +27,7 @@ var Micro;
         "websocket": "websocket",
         "socket": "websocket",
         "other": "other",
-        "beacon": "beacon",
+        "beacon": "other",
     };
     class Filter {
         constructor(filter) {
@@ -58,6 +59,9 @@ var Micro;
                     o = o.substring(1);
                 }
                 if (o === "libmicro" || o === "important") {
+                    if (negated) {
+                        throw new Error("libmicro does not accept negated 'libmicro' and 'important' option");
+                    }
                     return;
                 }
                 if (o === "first-party") {
@@ -125,10 +129,10 @@ var Micro;
                 throw new Error("libmicro only accepts one of 'first-party' and 'third-party' option");
             }
             if (this._domainMatch.includes("'self'") && this._domainMatch.length > 1) {
-                throw new Error("libmicro only accepts one of 'first-party' and 'domain' option");
+                throw new Error("libmicro only accepts one of 'first-party' and 'domain=' option");
             }
             if (this._domainUnmatch.includes("'self'") && this._domainUnmatch.length > 1) {
-                throw new Error("libmicro only accepts one of 'third-party' and 'domain' option");
+                throw new Error("libmicro only accepts one of 'third-party' and 'domain=' option");
             }
             if (/firefox/i.test(navigator.userAgent) && this._type === 0) {
                 let typeMatched = true;
