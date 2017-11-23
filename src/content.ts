@@ -1,3 +1,4 @@
+// This script is the content script of libmicro
 // See background.ts for more information
 "use strict";
 
