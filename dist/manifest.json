@@ -12,6 +12,19 @@
       "example.js"
     ]
   },
+  "content_scripts": [
+    {
+      "all_frames": true,
+      "js": [
+        "content.js"
+      ],
+      "match_about_blank": true,
+      "matches": [
+        "<all_urls>"
+      ],
+      "run_at": "document_start"
+    }
+  ],
   "description": "An example extension to illustrate functionalities of libmicro",
   "homepage_url": "https://github.com/AdBlockProtector2/libmicro/",
   "incognito": "spanning",

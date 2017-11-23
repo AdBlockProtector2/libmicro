@@ -2,7 +2,7 @@
   "compileOnSave": true,
   "compilerOptions": {
     "forceConsistentCasingInFileNames": true,
-    "lib": [ "es7", "dom" ],
+    "lib": [ "es7", "dom", "dom.iterable" ],
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
     "noUnusedLocals": true,

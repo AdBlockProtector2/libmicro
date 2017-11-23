@@ -751,6 +751,19 @@ namespace Micro {
                 return "";
             }
         }
+        /**
+         * Find asset by name.
+         * @param name - The asset to find.
+         * @return The asset or null if the asset could not be found.
+         */
+        private _findAsset(name: string): Asset | null {
+            for (let i = 0; i < this._assets.length; i++) {
+                if (this._assets[i].name === name) {
+                    return this._assets[i];
+                }
+            }
+            return null;
+        }
 
         /**
          * Committed event handler.
@@ -758,10 +771,34 @@ namespace Micro {
          * @param details - Event details.
          */
         private _onCommitted(details: chrome.webNavigation.WebNavigationTransitionCallbackDetails): void {
+            // Update tab store
             if (!this._tabs[details.tabId]) {
                 this._tabs[details.tabId] = {};
             }
             this._tabs[details.tabId][details.frameId] = details.url;
+
+            // Inject scriptlets
+            for (let i = 0; i < this._filters.length; i++) {
+                const filter = this._filters[i];
+
+                if (filter.type !== FilterType.INJECT) {
+                    // TODO Optimize this
+                    continue;
+                }
+
+                if (filter.match(details.url, details.url, "main_frame")) {
+                    let asset: Asset | null = this._findAsset(filter.data);
+                    if (asset) {
+                        chrome.tabs.executeScript(details.tabId, {
+                            frameId: details.frameId,
+                            code: asset.raw,
+                            runAt: "document_start",
+                        });
+                    } else {
+                        console.error("libmicro could not find asset '" + filter.data + "'");
+                    }
+                }
+            }
         }
         /**
          * Removed event handler.
@@ -805,13 +842,7 @@ namespace Micro {
                             return { cancel: true };
 
                         case FilterType.REDIRECT:
-                            let asset: Asset | undefined;
-                            for (let i = 0; i < this._assets.length; i++) {
-                                if (this._assets[i].name === filter.data) {
-                                    asset = this._assets[i];
-                                    break;
-                                }
-                            }
+                            let asset: Asset | null = this._findAsset(filter.data);
                             if (asset) {
                                 if (this.debug) {
                                     console.log("libmicro performed a redirect, from '" + details.url + "' to '" + filter.data + "'");

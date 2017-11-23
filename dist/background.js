@@ -439,11 +439,38 @@ var Micro;
                 return "";
             }
         }
+        _findAsset(name) {
+            for (let i = 0; i < this._assets.length; i++) {
+                if (this._assets[i].name === name) {
+                    return this._assets[i];
+                }
+            }
+            return null;
+        }
         _onCommitted(details) {
             if (!this._tabs[details.tabId]) {
                 this._tabs[details.tabId] = {};
             }
             this._tabs[details.tabId][details.frameId] = details.url;
+            for (let i = 0; i < this._filters.length; i++) {
+                const filter = this._filters[i];
+                if (filter.type !== 3) {
+                    continue;
+                }
+                if (filter.match(details.url, details.url, "main_frame")) {
+                    let asset = this._findAsset(filter.data);
+                    if (asset) {
+                        chrome.tabs.executeScript(details.tabId, {
+                            frameId: details.frameId,
+                            code: asset.raw,
+                            runAt: "document_start",
+                        });
+                    }
+                    else {
+                        console.error("libmicro could not find asset '" + filter.data + "'");
+                    }
+                }
+            }
         }
         _onRemoved(id) {
             delete this._tabs[id];
@@ -469,13 +496,7 @@ var Micro;
                             }
                             return { cancel: true };
                         case 1:
-                            let asset;
-                            for (let i = 0; i < this._assets.length; i++) {
-                                if (this._assets[i].name === filter.data) {
-                                    asset = this._assets[i];
-                                    break;
-                                }
-                            }
+                            let asset = this._findAsset(filter.data);
                             if (asset) {
                                 if (this.debug) {
                                     console.log("libmicro performed a redirect, from '" + details.url + "' to '" + filter.data + "'");
