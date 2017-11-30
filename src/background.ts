@@ -1,6 +1,6 @@
 /**
 
-libmicro, an embeddable firewall for modern browser extensions
+libmicro, an embeddable firewall for WebExtension
 Copyright (C) 2017 jspenguin2017
 
 This program is free software: you can redistribute it and/or modify
