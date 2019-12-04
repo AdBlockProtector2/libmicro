@@ -5,7 +5,7 @@
   },
   "dependencies": {
     "@types/chrome": "0.0.91",
-    "typescript": "3.7.2"
+    "typescript": "3.7.3"
   },
   "description": "An embeddable firewall for modern browser extensions.",
   "engines": {
@@ -15,5 +15,5 @@
   "license": "GPL-3.0",
   "name": "libmicro",
   "repository": "https://github.com/AdBlockProtector2/libmicro",
-  "version": "1.0.13"
+  "version": "1.0.14"
 }
