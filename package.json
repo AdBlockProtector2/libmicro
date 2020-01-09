@@ -9,11 +9,11 @@
   },
   "description": "An embeddable firewall for modern browser extensions.",
   "engines": {
-    "node": "10.18.0"
+    "node": "10.18.1"
   },
   "homepage": "https://github.com/AdBlockProtector2/libmicro",
   "license": "GPL-3.0",
   "name": "libmicro",
   "repository": "https://github.com/AdBlockProtector2/libmicro",
-  "version": "1.0.16"
+  "version": "1.0.17"
 }
